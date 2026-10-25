@@ -275,9 +275,12 @@ human and they are not already in the middle of a card.
 reads Paseo's agent records, so a quiet tick starts no model and uses nothing. It sends a sweep
 worker only the sessions that have stopped since it last looked and whose log has changed; label
 writes move `updatedAt`, so it compares a hash of the log tail. That uses about 10 to 20 cents per
-project with changes at API rates; on a subscription login it draws on plan limits, not a bill. It adds a card for each session that needs the human, a `nudge` card for each
-Stuck one, and a `remind` card when a session's `coord-parked-until` passes. Its log is
-`~/.local/state/coordinator/tick.log`.
+project with changes at API rates; on a subscription login it draws on plan limits, not a bill. It
+adds a card for each session that needs the human, a `nudge` card for each Stuck one, and a `remind`
+card when a session's `coord-parked-until` passes. Finished work always arrives as an `accept` card
+asking whether to close the session. A session that has sent messages to other sessions is a relay
+and never gets a card: fold its asks into the streams they concern yourself (step 7). Its log,
+`~/.local/state/coordinator/tick.log`, has a line only for ticks that read, added or woke something.
 
 **The inbox.** `~/.local/state/coordinator/<scope>/inbox.md`, where `<scope>` is `all` or your
 `projectId`. One line per card, in arrival order:
