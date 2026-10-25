@@ -71,9 +71,10 @@ Either way you see only this machine's Paseo daemon. Say so if the human mention
      the background. `<project-dir>` is the project's path from `paseo project ls`. Each worker starts
      in that directory, so it loads that project's rules and memory. It can only read, it skips your
      user-level hooks, and it prints one JSON array in the shape `sweep-worker.md` defines, in about
-     30 seconds, with its cost on stderr. Output starting `WORKER` means it failed: read that project
+     30 seconds, with its usage on stderr. Output starting `WORKER` means it failed: read that project
      yourself. Take the workers' classes, nudges and rules into steps 5 to 7, and check anything that
-     looks wrong before it reaches the human. A worker costs about 5 cents a session, so leave
+     looks wrong before it reaches the human. A worker uses about 5 cents a session at API rates (on a subscription,
+     that is plan usage, not a bill), so leave
      re-reading between sittings to the tick worker.
    - **Yourself.** Read the tail of each log with the CLI, which drops tool calls:
      `paseo logs <id> --filter text --tail 10`, and for the human's last words,
@@ -261,10 +262,10 @@ human and they are not already in the middle of a card.
 
 **The worker.** `tick.sh`, run every minute from 08:00 to 22:00 London time by the launchd job
 `com.<user>.coordinator-tick` (`tick-install.sh` installs it, `--uninstall` removes it). Each tick
-reads Paseo's agent records, so a quiet tick starts no model and costs nothing. It sends a sweep
+reads Paseo's agent records, so a quiet tick starts no model and uses nothing. It sends a sweep
 worker only the sessions that have stopped since it last looked and whose log has changed; label
-writes move `updatedAt`, so it compares a hash of the log tail. That costs about 10 to 20 cents per
-project with changes. It adds a card for each session that needs the human, a `nudge` card for each
+writes move `updatedAt`, so it compares a hash of the log tail. That uses about 10 to 20 cents per
+project with changes at API rates; on a subscription login it draws on plan limits, not a bill. It adds a card for each session that needs the human, a `nudge` card for each
 Stuck one, and a `remind` card when a session's `coord-parked-until` passes. Its log is
 `~/.local/state/coordinator/tick.log`.
 

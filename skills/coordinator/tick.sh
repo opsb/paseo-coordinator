@@ -9,7 +9,7 @@
 #      or a nudge card for the coordinator itself;
 #   4. wakes the coordinator only if something new arrived, it is idle, and it is not waiting on the
 #      human (its coord-card-open label is empty).
-# A quiet tick starts no model and costs nothing.
+# A quiet tick starts no model, so it uses none of the plan's limits.
 #
 # Test knobs: COORD_STATE_ROOT, COORD_RECORDS_DIR, COORD_ID (serve this session as the coordinator),
 # COORD_SCOPE, COORD_ONLY_IDS (space-separated session ids), COORD_ANYTIME=1 (ignore working hours),
@@ -153,8 +153,9 @@ sweep_projects() {
   wait
 }
 
-sweep_cost() {
-  cat "$1"/err-*.txt 2>/dev/null | sed -n 's/^sweep cost for .*: \$//p' | awk '{s += $1} END {printf "%.2f", s}'
+# Sweep usage this tick, priced at API rates. On a subscription it draws on plan limits, not a bill.
+sweep_usage() {
+  cat "$1"/err-*.txt 2>/dev/null | sed -n 's/^sweep usage for .*: \$\([0-9.]*\).*/\1/p' | awk '{s += $1} END {printf "%.2f", s}'
 }
 
 cards_from_report() {
@@ -285,7 +286,7 @@ serve() {
 
   new=$(added_count)
   wake_result=$(decide_wake "$coordinator" "$scope" "$dir" "$new")
-  log "scope=$scope sessions=$(wc -l < "$work/sessions.jsonl" | tr -d ' ') label-only=$(wc -l < "$work/label-only.jsonl" | tr -d ' ') swept=$swept reminders=$reminders new=$new open=$(open_card_count "$scope") cost=\$$(sweep_cost "$work") wake=$wake_result"
+  log "scope=$scope sessions=$(wc -l < "$work/sessions.jsonl" | tr -d ' ') label-only=$(wc -l < "$work/label-only.jsonl" | tr -d ' ') swept=$swept reminders=$reminders new=$new open=$(open_card_count "$scope") usage=\$$(sweep_usage "$work") wake=$wake_result"
   if [[ ${COORD_KEEP_WORK:-} == 1 ]]; then log "work kept in $work"; else rm -rf "$work"; fi
 }
 

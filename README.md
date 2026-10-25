@@ -47,8 +47,10 @@ on this machine's daemon.
 ## Tick worker (macOS)
 
 The inbox is kept by `tick.sh`, which launchd runs every minute from 08:00 to 22:00 London time. A
-quiet tick reads Paseo's agent records and starts no model, so it costs nothing; a tick that finds
-stopped sessions with new conversation runs one sweep worker per project, about 10 to 20 cents each.
+quiet tick reads Paseo's agent records and starts no model, so it uses nothing; a tick that finds
+stopped sessions with new conversation runs one sweep worker per project, about 10 to 20 cents each
+at API rates. Signed in with a Claude subscription, that comes out of the plan's usage limits; nothing
+is billed. The tick log records it as `usage=`.
 
 ```bash
 ~/.claude/skills/coordinator/tick-install.sh               # install or reinstall

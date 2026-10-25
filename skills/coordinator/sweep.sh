@@ -65,12 +65,13 @@ report_or_error() {
     end'
 }
 
-report_cost() {
-  jq -r '"sweep cost for \($dir): $\(.total_cost_usd // "?")"' --arg dir "$project_dir" >&2
+# On a subscription login this is usage against the plan's limits, priced at API rates; nothing is billed.
+report_usage() {
+  jq -r '"sweep usage for \($dir): $\(.total_cost_usd // "?") API-equivalent"' --arg dir "$project_dir" >&2
 }
 
 cd "$project_dir"
 
 response=$(run_worker)
-printf '%s' "$response" | report_cost
+printf '%s' "$response" | report_usage
 printf '%s' "$response" | report_or_error
