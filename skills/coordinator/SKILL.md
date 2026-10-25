@@ -58,7 +58,12 @@ Either way you see only this machine's Paseo daemon. Say so if the human mention
    a project. On a conflict, tell the human and stop. Otherwise set `coord-role` and `coord-scope`
    (your `projectId`, or `all`) on yourself.
 3. **Read state.** `list_pending_permissions` once. Then read every session that is not parked, by
-   one of two routes. A sitting is long; keep your own context for the human.
+   the first route that applies. A sitting is long; keep your own context for the human.
+   - **The inbox**, whenever the tick worker is installed (see Inbox). It has already read every
+     stopped session. Set `coord-card-open` on yourself so it doesn't wake you, run `tick.sh` once
+     to catch up (with `COORD_ANYTIME=1` outside working hours), and take the queue from
+     `inbox.sh open <scope>`. Working, Parked and Relay come from status and labels. Read a session
+     yourself only to build its card.
    - **Sweep workers**, always in `all` scope, and in project scope once a sitting runs long. For each
      project, write its sessions to a JSON array in your scratchpad (`id`, `workspace_title`,
      `status`, `createdAt`, `lastUserMessageAt`, `requiresAttention`, `attentionReason`, `labels`)
@@ -68,9 +73,8 @@ Either way you see only this machine's Paseo daemon. Say so if the human mention
      user-level hooks, and it prints one JSON array in the shape `sweep-worker.md` defines, in about
      30 seconds, with its cost on stderr. Output starting `WORKER` means it failed: read that project
      yourself. Take the workers' classes, nudges and rules into steps 5 to 7, and check anything that
-     looks wrong before it reaches the human. A worker costs about 5 cents a session, so on a
-     re-sweep send only sessions whose `updatedAt` differs from their `coord-swept` label, and reuse
-     the last report for the rest; keep each project's latest report in your scratchpad for that.
+     looks wrong before it reaches the human. A worker costs about 5 cents a session, so leave
+     re-reading between sittings to the tick worker.
    - **Yourself.** Read the tail of each log with the CLI, which drops tool calls:
      `paseo logs <id> --filter text --tail 10`, and for the human's last words,
      `paseo logs <id> --filter text | grep -A2 '^\[User\]' | tail -3`.
@@ -172,8 +176,10 @@ You asked: "check whether we need extra Google permissions for sign-in"
 Since: sign-in needs no new scopes (PR checked: approved, mergeable). Gmail still needs a scope review.
 Decide: ship sign-in now, leave Gmail for later?
 Recommend: yes. It unblocks TestFlight and the review takes weeks.
-(y / n / park / skip / refresher / more, or reply in your own words)
+(y / n / park / remind <when> / skip / refresher / more, or reply in your own words)
 ```
+
+Every card ends with this options line, `remind <when>` included.
 
 - Quote the human's words and use their names for things. These recall the work faster than a
   paraphrase or an ID.
@@ -194,11 +200,16 @@ When the human answers:
    the session is running, let the turn finish unless the answer changes what it is doing now. After a
    `done`, relay it unless the session is already watching for the result itself.
 2. Update that session's labels (see State).
-3. Confirm in a few words and show the next card in the same reply. The human never waits on an agent.
+3. Close the card (see Inbox), then confirm in a few words and show the next card in the same reply.
+   The human never waits on an agent.
 
-**Park** (park, later, not now): ask nothing more. Record the next step and when to revisit (default:
-next sitting), then say it back in one line: "Parked: 🔑 Google sign-in. Next: submit the scope review.
-Back Monday." A written plan lets the human stop holding it in mind.
+**Remind** (`remind tomorrow`, `remind me at 3`, `remind Monday`): set `coord-parked-until` to that
+time as an ISO timestamp in London time and `coord-next` to the next step, close the card, and say it
+back in one line: "Reminder: 🔑 Google sign-in, tomorrow 09:00. Next: submit the scope review." A day
+without a time means 09:00. The tick worker brings the stream back as a `remind` card when the time
+passes; no schedule is needed. A written plan lets the human stop holding it in mind.
+
+**Park** (park, later, not now): a reminder for the next working day at 09:00. Ask nothing more.
 
 **Skip** moves the item to the end of this sitting's queue, once.
 
@@ -238,8 +249,54 @@ led by its stream's motif:
 - **Working**: what is running and roughly when it returns.
 - **Parked**: next step and revisit time for each.
 
-If no coordinator heartbeat exists, offer one (`create_heartbeat`, every 15 minutes in working hours)
-that re-sweeps and posts a board here only when something needs the human.
+Then make sure the tick worker is running (see Inbox): `launchctl print gui/$(id -u)/com.$(id -un).coordinator-tick`.
+If it is not, run `tick-install.sh` and tell the human in one line. Clear `coord-card-open` so the
+worker can wake you when new cards arrive. Don't use a Paseo heartbeat for this: each tick would be a
+turn in this chat.
+
+## Inbox
+
+Between sittings a background worker keeps the queue, so you are woken only when something needs the
+human and they are not already in the middle of a card.
+
+**The worker.** `tick.sh`, run every minute from 08:00 to 22:00 London time by the launchd job
+`com.<user>.coordinator-tick` (`tick-install.sh` installs it, `--uninstall` removes it). Each tick
+reads Paseo's agent records, so a quiet tick starts no model and costs nothing. It sends a sweep
+worker only the sessions that have stopped since it last looked and whose log has changed; label
+writes move `updatedAt`, so it compares a hash of the log tail. That costs about 10 to 20 cents per
+project with changes. It adds a card for each session that needs the human, a `nudge` card for each
+Stuck one, and a `remind` card when a session's `coord-parked-until` passes. Its log is
+`~/.local/state/coordinator/tick.log`.
+
+**The inbox.** `~/.local/state/coordinator/<scope>/inbox.md`, where `<scope>` is `all` or your
+`projectId`. One line per card, in arrival order:
+
+```
+- [ ] 🔑 Google sign-in · do · Run the gate sync · <session-id> · 2026-10-25 18:52 <!-- <key> -->
+```
+
+The worker only adds lines, never twice for the same session and log state, and never while that
+session has an open card. You only tick lines off. Use the script for both, never an editor, so
+neither loses the other's change: `inbox.sh open <scope>` lists open cards and
+`inbox.sh done <scope> <session-id>` ticks off that session's card. The file is an inbox, not the
+order: rank open cards with step 2 every time.
+
+**The flag.** `coord-card-open` on your own session: set it to `yes` when you show a card and to an
+empty string when the card closes. While it is set, the worker adds cards but does not wake you.
+
+**Waking.** The worker sends `[coordinator inbox] N new card(s)` only when it added cards, the flag
+is clear, and you are idle. When it arrives, read the open cards, rank them, show the next one and set
+the flag.
+
+**Closing a card.** After the answer is relayed, or the card is parked or reminded: `inbox.sh done`
+for every session the card covered, then `inbox.sh open`, re-rank, and show the next card with the
+flag still set. With nothing left, clear the flag. A skipped card stays open and comes round again.
+
+**Card kinds from the worker.** A card may be stale by the time it reaches the top: re-read its
+session before showing it, and tick it off if the session has moved on. A `nudge` card is for you,
+not the human: send the nudge (step 5) between cards and tick it off. A `remind` card returns the
+stream as its current kind; re-read the session to build it, and clear `coord-parked-until` when the
+card closes.
 
 ## Motifs
 
@@ -282,8 +339,8 @@ removed; set an empty string to unset one.
 | `coord-motif` | the stream's emoji, the same on every session in it | first sweep that sees it; never changed |
 | `coord-human-at` | ISO time the human last acted on it through you | after each answer |
 | `coord-next` | the agreed next step | after each answer or park |
-| `coord-parked-until` | ISO date, or empty | on park, and cleared on return |
-| `coord-swept` | the session's `updatedAt` when last read | after each read |
+| `coord-card-open` | `yes` while a card is in front of the human, on your own session only | when a card is shown, and cleared when it closes |
+| `coord-parked-until` | ISO time to bring the stream back, or empty | on park or remind, and cleared when its card closes |
 
 **Last touch** is the latest of:
 
