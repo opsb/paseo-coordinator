@@ -25,8 +25,12 @@ brief.
 | Ready | the work is finished and nothing is pending, even if a later turn errored |
 | Stuck | the work is unfinished and the session errored, stopped with no next step, or is repeating itself |
 | Working | running, or idle waiting on CI, a bot or a schedule |
-| Relay | prompts other sessions on the human's behalf |
+| Relay | its `sends_to` list is not empty: it has sent messages to other sessions |
 | Parked | `[parked]` in the workspace title, or `coord-parked-until` in the future |
+
+   A Relay is Relay even when its last message asks the human for something: those asks belong to
+   the streams they concern. List each in `relay_asks` with the session it concerns, and the
+   coordinator folds it into that stream's card.
 
 3. **Check.** For each Blocked or Ready claim that a cheap read-only check covers (PR state, CI, a
    ticket), run it and record the result. Drop asks that events have overtaken.
@@ -34,6 +38,9 @@ brief.
    `CLAUDE.md` reserves for a human, or forbids, say which rule.
 5. **Ready needs evidence:** for code, the test or check the agent ran and what it showed; for
    research, the sources. Record "none" if missing.
+6. **Ready is always an Accept.** Its `kind` is `accept`. Its `ask` is never "None" or "Nothing
+   required": if the work is done and nothing is pending, the ask is "Close this session?" followed
+   by one line on what it delivered.
 
 ## Naming
 
@@ -62,7 +69,8 @@ Print only a JSON array, one object per session, nothing before or after it:
   "evidence": "checks you ran and their results, or the agent's evidence, or none",
   "nudge": "for Stuck only: a one-line prompt naming the next step, or null",
   "rule": "the project rule that applies, or null",
-  "relay_covers": ["ids of sessions a Relay prompts"]
+  "relay_covers": ["ids of sessions a Relay prompts"],
+  "relay_asks": [{"session": "id of the session the ask concerns", "ask": "one line"}]
 }
 ```
 
