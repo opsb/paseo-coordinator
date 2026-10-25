@@ -56,7 +56,10 @@ Either way you see only this machine's Paseo daemon. Say so if the human mention
 2. **Claim the role.** Your own session ID is in `$PASEO_AGENT_ID`. Another session carrying
    `coord-role=coordinator` conflicts with you if either of you has `coord-scope=all`, or if you share
    a project. On a conflict, tell the human and stop. Otherwise set `coord-role` and `coord-scope`
-   (your `projectId`, or `all`) on yourself.
+   (your `projectId`, or `all`) on yourself. Then make sure the tick worker is running (see Inbox):
+   `launchctl print gui/$(id -u)/com.$(id -un).coordinator-tick`. If it is not, run
+   `~/.claude/skills/coordinator/tick-install.sh` and tell the human in one line. Never use a Paseo
+   heartbeat for this: each tick would be a turn in this chat.
 3. **Read state.** `list_pending_permissions` once. Then read every session that is not parked, by
    the first route that applies. A sitting is long; keep your own context for the human.
    - **The inbox**, whenever the tick worker is installed (see Inbox). It has already read every
@@ -250,10 +253,8 @@ led by its stream's motif:
 - **Working**: what is running and roughly when it returns.
 - **Parked**: next step and revisit time for each.
 
-Then make sure the tick worker is running (see Inbox): `launchctl print gui/$(id -u)/com.$(id -un).coordinator-tick`.
-If it is not, run `tick-install.sh` and tell the human in one line. Clear `coord-card-open` so the
-worker can wake you when new cards arrive. Don't use a Paseo heartbeat for this: each tick would be a
-turn in this chat.
+Then check the tick worker is still running, as in step 1.2, and clear `coord-card-open` so the
+worker can wake you when new cards arrive.
 
 ## Inbox
 
