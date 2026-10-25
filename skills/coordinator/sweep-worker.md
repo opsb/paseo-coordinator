@@ -43,6 +43,11 @@ in the human's first message. Shorten by dropping words, never by paraphrasing.
 
 ## Report
 
+In `links`, list every PR and ticket the session is working on, with its URL as it appears in the
+log (`paseo logs <id> | grep -o -E 'https://(github\.com|linear\.app)/[^ )>"]*[^ )>".,;:]'`) or from
+`gh pr view <n> --json url,state,reviewDecision`, and its state in two or three words. Never build a
+URL; leave a link out rather than guess one.
+
 Print only a JSON array, one object per session, nothing before or after it:
 
 ```json
@@ -53,6 +58,7 @@ Print only a JSON array, one object per session, nothing before or after it:
   "kind": "decide | do | accept | null",
   "area": "one or two words, for grouping related work, e.g. mobile",
   "group": "the PR, ticket or feature it belongs to, e.g. PR #1403",
+  "links": [{"label": "PR #1403", "url": "https://github.com/acme/app/pull/1403", "state": "approved, mergeable"}],
   "effort_min": 1,
   "release": "long | short | none",
   "human_words": "the human's last substantive words on it, quoted, at most 120 characters",

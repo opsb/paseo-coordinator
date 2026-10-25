@@ -148,8 +148,8 @@ Relay: 📡 "Mobile sessions review" also prompts sessions; its asks are folded 
 ```
 
 Name each stream by its workspace title without the motif or phase prefixes such as `[Implementing]`
-(a hook writes those and they go stale), and show its motif before the name. If the title is a raw prompt fragment, make a two to four word name from the
-nouns in the human's first message. Shorten by dropping words, never by paraphrasing. Then show the
+(a hook writes those and they go stale), and show its motif before the name. If the title is a raw
+prompt fragment, make a two to four word name from the nouns in the human's first message. Shorten by dropping words, never by paraphrasing. Then show the
 first card in the same reply; don't ask whether to begin.
 
 In `all` scope, follow the totals with one line per project that has work, in queue order
@@ -176,8 +176,9 @@ A card is one of three kinds:
 
 ```
 [2/5] 🔑 Google sign-in · last looked 3h ago
+Work: [PR #1403](https://github.com/acme/app/pull/1403) approved, mergeable · [ENG-1218](https://linear.app/acme/issue/ENG-1218) in progress
 You asked: "check whether we need extra Google permissions for sign-in"
-Since: sign-in needs no new scopes (PR checked: approved, mergeable). Gmail still needs a scope review.
+Since: sign-in needs no new scopes. Gmail still needs a scope review.
 Decide: ship sign-in now, leave Gmail for later?
 Recommend: yes. It unblocks TestFlight and the review takes weeks.
 (y / n / park / remind <when> / skip / refresher / more, or reply in your own words)
@@ -185,6 +186,14 @@ Recommend: yes. It unblocks TestFlight and the review takes weeks.
 
 Every card ends with this options line, `remind <when>` included.
 
+- **The work line.** Under the header, list every PR and ticket the stream is working on, each a
+  link with its state in two or three words (draft, CI failing, approved, merged; in progress, in
+  review). Leave the line out only when there are none.
+- **Links, never bare references.** Every PR, ticket, commit, deploy, document or page mentioned on a
+  card or the board is a markdown link. Take URLs from the sweep worker's `links`, the session's
+  log (`paseo logs <id> | grep -o -E 'https://(github\.com|linear\.app)/[^ )>"]*[^ )>".,;:]'`),
+  `gh pr view <n> --repo <owner/repo> --json url,state,reviewDecision`, or Linear's `get_issue`.
+  Never build a URL from a guess; find it before the card goes out.
 - Quote the human's words and use their names for things. These recall the work faster than a
   paraphrase or an ID.
 - Show what changed since they last looked, not the history.
