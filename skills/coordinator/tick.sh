@@ -19,7 +19,7 @@ set -uo pipefail
 export PATH="/Applications/Paseo.app/Contents/Resources/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 export LANG=${LANG:-en_GB.UTF-8}
 
-skill_dir=$(cd "$(dirname "$0")" && pwd)
+skill_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 state_root=${COORD_STATE_ROOT:-$HOME/.local/state/coordinator}
 records_dir=${COORD_RECORDS_DIR:-${PASEO_HOME:-$HOME/.paseo}/agents}
 now=$(date -u +%FT%TZ)
@@ -136,10 +136,25 @@ project_key() {
   printf '%s' "$1" | shasum | cut -c1-8
 }
 
+# The sessions this one has sent messages to, from its tool log. Creating a handoff agent doesn't count.
+sent_to() {
+  paseo logs "$1" --filter tools 2>/dev/null \
+    | grep '^\[Send message\]' | grep -o '"agentId":"[^"]*"' | cut -d'"' -f4 \
+    | grep -v -- "$1" | sort -u | jq -R . | jq -s -c .
+}
+
+# A session that has messaged other sessions is a relay: it never gets a card of its own.
+with_relay_targets() {
+  local session
+  while read -r session; do
+    jq -c --argjson sends "$(sent_to "$(jq -r .id <<< "$session")")" '. + {sends_to: $sends}' <<< "$session"
+  done
+}
+
 sweep_input_for() {
   jq -c --arg dir "$2" 'select(.project_dir == $dir)
     | {id, workspace_title, status, createdAt, lastUserMessageAt, requiresAttention,
-       attentionReason, labels}' "$1" | jq -s .
+       attentionReason, labels, sends_to}' "$1" | jq -s .
 }
 
 # Runs one sweep worker per project, all at once, and leaves out-<key>.json beside each input.
@@ -158,11 +173,27 @@ sweep_usage() {
   cat "$1"/err-*.txt 2>/dev/null | sed -n 's/^sweep usage for .*: \$\([0-9.]*\).*/\1/p' | awk '{s += $1} END {printf "%.2f", s}'
 }
 
+# One card per report entry that needs someone. Relays (listed in $2) get none. An entry whose ask
+# is empty or says there is nothing to do is finished work: an Accept card asking to close the session.
 cards_from_report() {
-  jq -c '.[] | select(.class == "Blocked" or .class == "Ready" or .class == "Stuck")
-    | {id, stream,
-       kind: (if .class == "Stuck" then "nudge" else (.kind // "decide") end),
-       ask: (if .class == "Stuck" then (.nudge // .ask // "") else (.ask // "") end)}' "$1"
+  local report=$1 relays=${2:-[]}
+  jq -c --argjson relays "$relays" '
+    def nothing_asked:
+      (. // "") | ascii_downcase
+      | test("^\\s*$") or test("^\\s*(none|n/a|nothing (required|needed|to do|pending)|no (action|further action)( needed| required)?)\\b");
+    .[]
+    | select(.class == "Blocked" or .class == "Ready" or .class == "Stuck")
+    | select(.id as $id | $relays | index($id) | not)
+    | if .class != "Stuck" and (.ask | nothing_asked) then
+        {id, stream, kind: "accept",
+         ask: "Close this session? \(if (.since | nothing_asked) then "It finished with nothing pending." else .since end)"}
+      elif .class == "Stuck" then
+        {id, stream, kind: "nudge", ask: (.nudge // .ask // "")}
+      elif .class == "Ready" then
+        {id, stream, kind: "accept", ask}
+      else
+        {id, stream, kind: (.kind // "decide"), ask}
+      end' "$report"
 }
 
 # Records each outcome (added or skipped) in $adds_file, which serve sets per coordinator.
@@ -205,7 +236,7 @@ cards_from_sweep() {
         "$(jq -r .stream <<< "$card")" \
         "$(jq -r .kind <<< "$card")" \
         "$(jq -r .ask <<< "$card")"
-    done < <(cards_from_report "$out")
+    done < <(cards_from_report "$out" "$(jq -s -c 'map(select((.sends_to // []) | length > 0) | .id)' "$sessions")")
     jq -r '.[].id' "$out" | while read -r id; do
       jq -c --arg id "$id" 'select(.id == $id)' "$sessions"
     done
@@ -274,7 +305,7 @@ serve() {
 
   moved_since_seen "$seen" < "$work/sessions.jsonl" | with_changed_conversation "$seen" > "$work/moved.jsonl"
   jq -c 'select(.changed | not)' "$work/moved.jsonl" > "$work/label-only.jsonl"
-  jq -c 'select(.changed)' "$work/moved.jsonl" > "$work/changed.jsonl"
+  jq -c 'select(.changed)' "$work/moved.jsonl" | with_relay_targets > "$work/changed.jsonl"
   remember_seen "$seen" "$work/label-only.jsonl"
 
   swept=$(wc -l < "$work/changed.jsonl" | tr -d ' ')
@@ -286,7 +317,10 @@ serve() {
 
   new=$(added_count)
   wake_result=$(decide_wake "$coordinator" "$scope" "$dir" "$new")
-  log "scope=$scope sessions=$(wc -l < "$work/sessions.jsonl" | tr -d ' ') label-only=$(wc -l < "$work/label-only.jsonl" | tr -d ' ') swept=$swept reminders=$reminders new=$new open=$(open_card_count "$scope") usage=\$$(sweep_usage "$work") wake=$wake_result"
+  # Idle ticks leave no trace; log only a tick that read, added or woke something.
+  if (( swept > 0 || new > 0 )) || [[ $wake_result != none ]]; then
+    log "scope=$scope sessions=$(wc -l < "$work/sessions.jsonl" | tr -d ' ') label-only=$(wc -l < "$work/label-only.jsonl" | tr -d ' ') swept=$swept reminders=$reminders new=$new open=$(open_card_count "$scope") usage=\$$(sweep_usage "$work") wake=$wake_result"
+  fi
   if [[ ${COORD_KEEP_WORK:-} == 1 ]]; then log "work kept in $work"; else rm -rf "$work"; fi
 }
 
@@ -306,4 +340,7 @@ main() {
   done < <(coordinators)
 }
 
-main "$@"
+# Sourcing the file (for tests) defines the functions without running a tick.
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi
