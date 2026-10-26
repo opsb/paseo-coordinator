@@ -13,7 +13,8 @@
 #
 # Test knobs: COORD_STATE_ROOT, COORD_RECORDS_DIR, COORD_ID (serve this session as the coordinator),
 # COORD_SCOPE, COORD_ONLY_IDS (space-separated session ids), COORD_ANYTIME=1 (ignore working hours),
-# COORD_DRY_SEND=1 (log the wake instead of sending), COORD_ASSUME_IDLE=1.
+# COORD_DRY_SEND=1 (log the wake instead of sending), COORD_ASSUME_IDLE=1, COORD_NOW (epoch seconds
+# standing in for the time). Working hours and the clock live in schedule.sh; clock.sh changes them.
 
 set -uo pipefail
 export PATH="/Applications/Paseo.app/Contents/Resources/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
@@ -24,15 +25,32 @@ state_root=${COORD_STATE_ROOT:-$HOME/.local/state/coordinator}
 records_dir=${COORD_RECORDS_DIR:-${PASEO_HOME:-$HOME/.paseo}/agents}
 now=$(date -u +%FT%TZ)
 
+source "$skill_dir/schedule.sh"
+
 log() {
   printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$state_root/tick.log"
 }
 
-in_working_hours() {
-  [[ ${COORD_ANYTIME:-} == 1 ]] && return 0
-  local hour
-  hour=$(TZ=Europe/London date +%H)
-  (( 10#$hour >= 8 && 10#$hour < 22 ))
+# Tells each coordinator once when the working hours switch the worker on or off by themselves.
+# clock.sh records the coordinator's own changes, so those are never announced.
+announce_change() {
+  local current=$1 file=$state_root/worker-state last message coordinator id scope
+  last=$(cat "$file" 2> /dev/null || true)
+  echo "$current" > "$file"
+  [[ -n $last && $last != "$current" ]] || return 0
+  message="[coordinator inbox] Notice, not a card: the inbox worker is now $(describe_worker "$(config)" "$(now_epoch)")."
+  if [[ $current == off ]]; then
+    message+=" Tell the human in one line, after the current card if one is open, and offer to clock on or change the hours."
+  else
+    message+=" Tell the human in one line, after the current card if one is open."
+  fi
+  while read -r coordinator; do
+    id=$(jq -r .id <<< "$coordinator")
+    scope=$(jq -r .scope <<< "$coordinator")
+    mkdir -p "$state_root/$scope"
+    wake "$id" "$message" "$state_root/$scope"
+  done < <(coordinators)
+  log "the working hours turned the worker $current; told the coordinator"
 }
 
 # One tick at a time. A lock older than 15 minutes belongs to a tick that died.
@@ -326,8 +344,13 @@ serve() {
 
 main() {
   mkdir -p "$state_root"
-  in_working_hours || exit 0
   take_tick_lock || { log "skip: previous tick still running"; exit 0; }
+
+  local state
+  state=$(worker_state "$(config)" "$(now_epoch)")
+  announce_change "${state%% *}"
+  [[ $state == on* ]] || exit 0
+
   records_look_right || { log "error: Paseo agent records in $records_dir changed shape; tick stopped"; exit 1; }
 
   local workspaces projects coordinator_ids coordinator

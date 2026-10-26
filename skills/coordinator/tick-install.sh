@@ -63,7 +63,8 @@ case ${1:-} in
     unload
     write_plist
     launchctl bootstrap "$domain" "$plist"
-    echo "Installed $label: runs $skill_dir/tick.sh every minute, 08:00 to 22:00 London time."
+    echo "Installed $label: runs $skill_dir/tick.sh every minute; it works within the hours in clock.sh."
+    "$skill_dir/clock.sh" status
     echo "Log: $state_root/tick.log"
     ;;
   *)
