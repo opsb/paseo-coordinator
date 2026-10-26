@@ -71,6 +71,15 @@ only you can take, and an Accept card for finished work.
 
 ### Working hours and the clock
 
+A background worker, the inbox worker, runs every minute between 08:00 and 22:00 London time. Each
+time, it checks which sessions have stopped, adds a card to the inbox for each one that needs you,
+and wakes the coordinator if you are free to see it. Outside those hours it does nothing, so nothing
+reaches you and no usage is spent while you are away.
+
+The working hours set the default; the clock overrides them for a sitting. Clock on to run the worker
+outside the hours, clock off to pause it within them. You can also change the hours themselves. How
+each tick decides is in [The schedule](#the-schedule).
+
 | You say | What happens |
 |---|---|
 | "clock on" (also "clocking on", "clock in") | The inbox worker runs from now, whatever the working hours, until you clock off. The coordinator catches up and shows the board. |
