@@ -200,19 +200,6 @@ Starts one read-only sweep worker (a headless Claude) in the project's directory
 project's rules and memory, and prints its JSON report. It skips your user-level hooks and settings,
 and reports its usage on stderr. The brief and report format are in `sweep-worker.md`.
 
-### `hooks/paseo-phase.sh` (optional)
-
-Prefixes each workspace title with the agent's phase (`[Planning]`, `[Implementing]`, `[Verifying]`,
-`[In review]`) and keeps a leading motif first. Link it and register it on `UserPromptSubmit` and on
-`PreToolUse` with matcher `Edit|Write|MultiEdit|NotebookEdit|Bash|EnterPlanMode`:
-
-```bash
-ln -s ~/Projects/paseo-coordinator/hooks/paseo-phase.sh ~/.claude/hooks/paseo-phase.sh
-bash hooks/paseo-phase.test.sh         # title cases, motif included
-```
-
-`PASEO_PHASE_DRY_RUN=1` prints the phase and title instead of renaming.
-
 ## Testing without side effects
 
 Every script reads these variables, so a dry run touches no real state, sends nothing and starts no
@@ -273,8 +260,6 @@ Repository:
 | `skills/coordinator/inbox.sh` | adds, lists and ticks off cards in the inbox, under one lock |
 | `skills/coordinator/sweep.sh` | starts a read-only sweep worker in a project's directory |
 | `skills/coordinator/sweep-worker.md` | the sweep worker's brief and report format |
-| `hooks/paseo-phase.sh` | the optional phase hook |
-| `hooks/paseo-phase.test.sh` | its title test |
 
 ## Limits
 

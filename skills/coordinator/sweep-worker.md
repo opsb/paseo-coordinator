@@ -44,9 +44,9 @@ brief.
 
 ## Naming
 
-Name each stream by its workspace title without a leading emoji or phase prefixes such as
-`[Implementing]`. If the title is a raw prompt fragment, make a two to four word name from the nouns
-in the human's first message. Shorten by dropping words, never by paraphrasing.
+Name each stream by its workspace title without a leading emoji. If the title is a raw prompt
+fragment, make a two to four word name from the nouns in the human's first message. Shorten by
+dropping words, never by paraphrasing.
 
 ## Report
 

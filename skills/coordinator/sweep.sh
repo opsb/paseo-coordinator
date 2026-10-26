@@ -3,8 +3,8 @@
 #
 # Usage: sweep.sh <project-dir> <sessions-json-file>
 #
-# The worker skips user-level settings, so global hooks (finish notifications, phase renames) stay
-# quiet; the project's own settings and hooks still apply. Its tools allow reads only.
+# The worker skips user-level settings, so global hooks (finish notifications) stay quiet; the
+# project's own settings and hooks still apply. Its tools allow reads only.
 
 set -euo pipefail
 

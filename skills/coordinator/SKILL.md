@@ -148,10 +148,10 @@ Working: 🧪 Ask Fae tools test (waiting on CI) · Nudged: 🪞 Duplicate accou
 Relay: 📡 "Mobile sessions review" also prompts sessions; its asks are folded in below.
 ```
 
-Name each stream by its workspace title without the motif or phase prefixes such as `[Implementing]`
-(a hook writes those and they go stale), and show its motif before the name. If the title is a raw
-prompt fragment, make a two to four word name from the nouns in the human's first message. Shorten by dropping words, never by paraphrasing. Then show the
-first card in the same reply; don't ask whether to begin.
+Name each stream by its workspace title without the motif, and show its motif before the name. If the
+title is a raw prompt fragment, make a two to four word name from the nouns in the human's first
+message. Shorten by dropping words, never by paraphrasing. Then show the first card in the same reply;
+don't ask whether to begin.
 
 When the inbox worker is off, the board starts with it, the one exception to bottom line first,
 because it changes what the human can expect from you. State it; don't ask it, since the first card
@@ -371,15 +371,15 @@ place lets the human tell which stream they are in before reading a word, and br
   as a status (✅ ❌ ⚠️ 🚨 ⏳ 🔴 🟢 🚧): the motif names the stream, not its state.
 - One motif per stream, shared by every session in it, never by two streams. Don't reuse one that a
   session in the 30-day listing carries for another stream; the old link would compete with the new.
-- Never change it, even when the stream is renamed or changes phase. If the human puts a different
+- Never change it, even when the stream is renamed. If the human puts a different
   emoji at the start of a workspace title, adopt theirs.
 - 🧭 is yours: put it on your own workspace title so the human can find you.
 
 **Showing.** On the board, cards, park lines and recap: the motif, a space, the stream's name
-(`🔑 Google sign-in`). In a workspace title: the motif and a space at the very start, the rest unchanged
-(`🔑 [Implementing] Google sign-in`), with `paseo workspace rename <workspaceId> "<title>"`. The phase
-hook keeps a leading motif first. On each sweep, put it back on any title that has lost it. Adding the
-motif is the only change you make to a workspace you did not create.
+(`🔑 Google sign-in`). In a workspace title: the motif and a space at the very start, the rest unchanged,
+with `paseo workspace rename <workspaceId> "<title>"`. The motif is the only prefix a title carries. On
+each sweep, put it back on any title that has lost it. Adding the motif is the only change you make to
+a workspace you did not create.
 
 ## State
 
