@@ -46,8 +46,11 @@ on this machine's daemon.
 
 ## Tick worker (macOS)
 
-The inbox is kept by `tick.sh`, which launchd runs every minute from 08:00 to 22:00 London time. A
-quiet tick reads Paseo's agent records and starts no model, so it uses nothing; a tick that finds
+The inbox is kept by `tick.sh`, which launchd runs every minute. It works within the working hours,
+08:00 to 22:00 London time unless changed, or while you are clocked on. Tell the coordinator "clock
+on", "clock off" or new hours, or use `clock.sh` yourself. When the hours switch the worker on or
+off, it sends the coordinator a one-line notice, and the coordinator says so on the board, when the
+queue empties and in its closing recap. A quiet tick reads Paseo's agent records and starts no model, so it uses nothing; a tick that finds
 stopped sessions with new conversation runs one sweep worker per project, about 10 to 20 cents each
 at API rates. Signed in with a Claude subscription, that comes out of the plan's usage limits; nothing
 is billed. The tick log records it as `usage=`.
@@ -55,11 +58,15 @@ is billed. The tick log records it as `usage=`.
 ```bash
 ~/.claude/skills/coordinator/tick-install.sh               # install or reinstall
 ~/.claude/skills/coordinator/tick-install.sh --uninstall
+~/.claude/skills/coordinator/clock.sh status                 # is it on, and until when
+~/.claude/skills/coordinator/clock.sh on                     # run now, whatever the hours
+~/.claude/skills/coordinator/clock.sh off [--until-clock-on] # pause until the hours next begin
+~/.claude/skills/coordinator/clock.sh hours 07:30-23:00      # new working hours
 tail -f ~/.local/state/coordinator/tick.log
 ```
 
-State lives in `~/.local/state/coordinator/<scope>/`: `inbox.md`, the worker's `seen.json`, and
-`tick.log` one level up. It relies on Paseo's on-disk agent records in `~/.paseo/agents`, which are
+State lives in `~/.local/state/coordinator/<scope>/`: `inbox.md` and the worker's `seen.json`. One
+level up are `config.json` (hours and clock, written only by `clock.sh`) and `tick.log`. It relies on Paseo's on-disk agent records in `~/.paseo/agents`, which are
 undocumented; if Paseo changes their shape, the tick logs an error rather than guessing.
 
 ## Phase hook (optional)
@@ -84,6 +91,8 @@ bash hooks/paseo-phase.test.sh   # title cases, motif included
 | `skills/coordinator/inbox.sh` | adds, lists and ticks off cards in the inbox, under one lock |
 | `skills/coordinator/tick.sh` | one tick of the background worker |
 | `skills/coordinator/tick-install.sh` | installs or removes the launchd job that runs it |
+| `skills/coordinator/clock.sh` | clock on, clock off, working hours and status |
+| `skills/coordinator/schedule.sh` | the hours and clock logic shared by `tick.sh` and `clock.sh` |
 | `hooks/paseo-phase.sh` | the optional phase hook |
 | `hooks/paseo-phase.test.sh` | its title test |
 

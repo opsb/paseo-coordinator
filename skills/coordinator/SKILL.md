@@ -56,15 +56,16 @@ Either way you see only this machine's Paseo daemon. Say so if the human mention
 2. **Claim the role.** Your own session ID is in `$PASEO_AGENT_ID`. Another session carrying
    `coord-role=coordinator` conflicts with you if either of you has `coord-scope=all`, or if you share
    a project. On a conflict, tell the human and stop. Otherwise set `coord-role` and `coord-scope`
-   (your `projectId`, or `all`) on yourself. Then make sure the tick worker is running (see Inbox):
-   `launchctl print gui/$(id -u)/com.$(id -un).coordinator-tick`. If it is not, run
-   `~/.claude/skills/coordinator/tick-install.sh` and tell the human in one line. Never use a Paseo
-   heartbeat for this: each tick would be a turn in this chat.
+   (your `projectId`, or `all`) on yourself. Then check the inbox worker with
+   `~/.claude/skills/coordinator/clock.sh status` (see Inbox). If it is not installed, run
+   `tick-install.sh` beside it and tell the human in one line. Keep the status line for the board.
+   Never use a Paseo heartbeat for this: each tick would be a turn in this chat.
 3. **Read state.** `list_pending_permissions` once. Then read every session that is not parked, by
    the first route that applies. A sitting is long; keep your own context for the human.
    - **The inbox**, whenever the tick worker is installed (see Inbox). It has already read every
      stopped session. Set `coord-card-open` on yourself so it doesn't wake you, run `tick.sh` once
-     to catch up (with `COORD_ANYTIME=1` outside working hours), and take the queue from
+     to catch up (with `COORD_ANYTIME=1` when the worker is off: a one-off read that does not clock on),
+     and take the queue from
      `inbox.sh open <scope>`. Working, Parked and Relay come from status and labels. Read a session
      yourself only to build its card.
    - **Sweep workers**, always in `all` scope, and in project scope once a sitting runs long. For each
@@ -152,6 +153,12 @@ Name each stream by its workspace title without the motif or phase prefixes such
 prompt fragment, make a two to four word name from the nouns in the human's first message. Shorten by dropping words, never by paraphrasing. Then show the
 first card in the same reply; don't ask whether to begin.
 
+When the inbox worker is off, the board starts with it, the one exception to bottom line first,
+because it changes what the human can expect from you. State it; don't ask it, since the first card
+is the one question on screen: "Inbox worker is off until 08:00 tomorrow; nothing will reach you here
+until then. Say 'clock on' to start it now, or give new hours (now 08:00–22:00)." When it is on,
+leave it out.
+
 In `all` scope, follow the totals with one line per project that has work, in queue order
 (`fae-app-v1: 3 need you · second-brain: 1`), and put the project's name at the start of each card's
 header.
@@ -237,6 +244,11 @@ New events (finish notifications, permission prompts) wait until the current car
 them in one line at the top of the next card ("2 new since: CI failed on Mobile flags; UAT plan
 done") and re-rank. Interrupt mid-card only for an emergency.
 
+A `[coordinator inbox] Notice` is the worker saying the working hours have just turned it on or off.
+It is not a card. Mid-card, say nothing yet. Pass it on in one line when the card closes, before the
+next card or before you go quiet, or at once if no card is open. When it has gone off, add "Say
+'clock on' to keep it running, or give new hours."
+
 Never relay what needs no action. "Still running" is noise, and noise teaches the human to skim past
 the message that matters.
 
@@ -261,17 +273,21 @@ led by its stream's motif:
 - **Answered for you**: questions you settled from earlier decisions.
 - **Working**: what is running and roughly when it returns.
 - **Parked**: next step and revisit time for each.
+- **Inbox worker**: its `clock.sh status` in one line, saying when it next runs. When it is off,
+  offer to clock on or change the hours, unless the human has just clocked off.
 
-Then check the tick worker is still running, as in step 1.2, and clear `coord-card-open` so the
-worker can wake you when new cards arrive.
+This recap's Inbox worker line replaces the "before you go quiet" line in Inbox; never say both.
+
+Then clear `coord-card-open` so the worker can wake you when new cards arrive.
 
 ## Inbox
 
 Between sittings a background worker keeps the queue, so you are woken only when something needs the
 human and they are not already in the middle of a card.
 
-**The worker.** `tick.sh`, run every minute from 08:00 to 22:00 London time by the launchd job
-`com.<user>.coordinator-tick` (`tick-install.sh` installs it, `--uninstall` removes it). Each tick
+**The worker.** `tick.sh`, run every minute by the launchd job `com.<user>.coordinator-tick`
+(`tick-install.sh` installs it, `--uninstall` removes it). It works only within the working hours
+(08:00–22:00 London time unless changed) or while the human is clocked on; see Clock. Each tick
 reads Paseo's agent records, so a quiet tick starts no model and uses nothing. It sends a sweep
 worker only the sessions that have stopped since it last looked and whose log has changed; label
 writes move `updatedAt`, so it compares a hash of the log tail. That uses about 10 to 20 cents per
@@ -304,13 +320,39 @@ the flag.
 
 **Closing a card.** After the answer is relayed, or the card is parked or reminded: `inbox.sh done`
 for every session the card covered, then `inbox.sh open`, re-rank, and show the next card with the
-flag still set. With nothing left, clear the flag. A skipped card stays open and comes round again.
+flag still set. With nothing left, clear the flag, and if the worker is off, say so before you go
+quiet: "Inbox worker is off until 08:00 tomorrow; nothing will reach you here until then. Clock on,
+or change the hours?" A skipped card stays open and comes round again.
 
 **Card kinds from the worker.** A card may be stale by the time it reaches the top: re-read its
 session before showing it, and tick it off if the session has moved on. A `nudge` card is for you,
 not the human: send the nudge (step 5) between cards and tick it off. A `remind` card returns the
 stream as its current kind; re-read the session to build it, and clear `coord-parked-until` when the
 card closes.
+
+## Clock
+
+The human controls when the inbox worker runs. `~/.claude/skills/coordinator/clock.sh` is the only
+way to change it; each command prints the worker's new status in one line, which you pass on as it is.
+
+- **Clock on** ("clock on", "clocking on", "clock in"): a working session starts now, whatever the
+  hours, and stays on until the human clocks off. In order: `clock.sh status`, and `tick-install.sh`
+  if it says not installed; `clock.sh on`; set `coord-card-open`; `tick.sh` once to catch up (no
+  `COORD_ANYTIME` needed, the clock is on); then the board and first card (step 3). With nothing in
+  the inbox, clear the flag and say the status line and "Nothing needs you; I'll bring cards as they
+  come."
+- **Clock off** ("clock off", "clocking off", "clock out", "done for the day"): the working session
+  ends. Run `clock.sh off`, which pauses the worker until the working hours next begin; that is the
+  default. If the human says otherwise ("until I clock on", "for the weekend"), run
+  `clock.sh off --until-clock-on`. Then give the closing recap (step 8), whose last line says when the
+  worker next runs.
+- **Hours** ("work 7 till 11", "change the hours to 07:30–23:00"): run `clock.sh hours 07:00-23:00`,
+  adding an IANA zone such as `America/New_York` only if the human names one. Read loose times the
+  way a working day runs ("7 till 11" is 07:00–23:00), and say the new status back in one line in
+  24-hour times, so a wrong reading is caught at once. Equal start and end mean always on.
+
+Clocking on or off, or changing the hours, is never announced by the worker; you say it yourself.
+The worker announces only the hours turning it on or off on their own.
 
 ## Motifs
 
