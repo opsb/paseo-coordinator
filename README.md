@@ -109,7 +109,10 @@ When it is off, the tick stops there and costs nothing. When it is on, it:
 - adds a card to the inbox for each session that needs you, and a nudge for each stuck one, which the
   coordinator handles without you;
 - wakes the coordinator only if new cards arrived, you are not mid-card, and it is idle. Otherwise the
-  cards wait in the inbox until the current card closes.
+  cards wait in the inbox until the current card closes;
+- once an hour, adds a "Close this session?" card for each session whose PR has merged and whose
+  work looks over (see [`propose-archive.sh`](#propose-archivesh)). Nothing archives on its own: the
+  coordinator offers finished sessions in one batch and archives only what you confirm.
 
 When the working hours turn the worker on or off by themselves, the next tick sends the coordinator a
 one-line notice, which it passes on after the current card. Clocking on or off, or changing the
@@ -129,6 +132,7 @@ only for ticks that read, added or woke something.
 | A long pause | `clock.sh off --until-clock-on`, then `clock.sh on` when you are back. |
 | How often it ticks | Edit `StartInterval` (seconds) in `tick-install.sh`, then run `tick-install.sh` again. |
 | Whether it runs at all | `tick-install.sh --uninstall` removes the job; `tick-install.sh` puts it back. |
+| How long merged work must be quiet before it is offered for closing | `COORD_CLOSE_AFTER_HOURS=2 tick-install.sh` (default 1). |
 
 The hours and clock live in `~/.local/state/coordinator/config.json`. Change them with `clock.sh`,
 which checks the times and the zone; the file's shape, for reference:
@@ -200,6 +204,38 @@ Starts one read-only sweep worker (a headless Claude) in the project's directory
 project's rules and memory, and prints its JSON report. It skips your user-level hooks and settings,
 and reports its usage on stderr. The brief and report format are in `sweep-worker.md`.
 
+### `propose-archive.sh`
+
+```bash
+propose-archive.sh <scope>             # dry run: one line per workspace, propose or keep and why
+propose-archive.sh <scope> --add       # add the cards; the tick runs this hourly
+bash propose-archive.test.sh           # its checks against a throwaway repo; no real workspace
+```
+
+It never archives anything. For each session that looks finished it adds an `accept` card, "Close
+this session?", with a link to the merged PR. The coordinator gathers those, and the sweep's own
+accept cards for sessions that delivered their answer, into one card ("Close 3 finished sessions?
+y / pick 1 3 / n"), and archives only what you confirm.
+
+It replaces Paseo's own setting `daemon.autoArchiveAfterMerge`, which archives a workspace the
+moment its PR merges, closing sessions that are still releasing or testing, and then deletes the
+worktree with `git worktree remove --force`. Keep that setting off
+(`paseo daemon config set daemon.autoArchiveAfterMerge false && paseo daemon reload`); the script
+warns while it is on.
+
+It proposes a workspace's sessions only when all of these hold, and leaves them alone if it cannot
+check one:
+
+1. its checkout is on a branch other than the repository's default branch;
+2. it has live sessions, none of them the coordinator, running, or waiting for attention;
+3. none has an open inbox card or a reminder still to come;
+4. nothing has happened in it, and you have not touched it, for an hour (`COORD_CLOSE_AFTER_HOURS`);
+5. its worktree has no uncommitted or untracked files, and every commit is on origin or is the merged
+   PR's head (a squash merge usually deletes the remote branch);
+6. its branch's pull request has merged.
+
+Each card's key holds the PR, so a session you chose to keep is not proposed again for that PR.
+
 ## Testing without side effects
 
 Every script reads these variables, so a dry run touches no real state, sends nothing and starts no
@@ -218,6 +254,7 @@ model:
 | `COORD_RECORDS_DIR` | Read Paseo agent records from here instead of `~/.paseo/agents`. |
 | `COORD_KEEP_WORK=1` | Keep each tick's working files and log where they are. |
 | `COORD_SKIP_JOB_CHECK=1` | `clock.sh status` skips checking that the launchd job is loaded. |
+| `COORD_CLOSE_AFTER_HOURS` | How long merged work must be quiet before `propose-archive.sh` offers to close it (default 1). |
 
 For example, the off-notice at the end of the working hours, sent (dry) to any live Paseo session:
 
@@ -243,6 +280,7 @@ State, in `~/.local/state/coordinator/`:
 | `<scope>/inbox.md` | the cards |
 | `<scope>/seen.json` | each session's last-read state, so it is read again only when its conversation changes |
 | `<scope>/wake-pending` | new cards the coordinator has not been woken for yet |
+| `<scope>/propose-archive.last` | when `propose-archive.sh` last ran for that scope, so it runs once an hour |
 
 The worker relies on Paseo's on-disk agent records in `~/.paseo/agents`, which are undocumented; if
 Paseo changes their shape, the tick logs an error and stops rather than guessing.
@@ -260,6 +298,8 @@ Repository:
 | `skills/coordinator/inbox.sh` | adds, lists and ticks off cards in the inbox, under one lock |
 | `skills/coordinator/sweep.sh` | starts a read-only sweep worker in a project's directory |
 | `skills/coordinator/sweep-worker.md` | the sweep worker's brief and report format |
+| `skills/coordinator/propose-archive.sh` | proposes closing finished sessions, as inbox cards; never archives |
+| `skills/coordinator/propose-archive.test.sh` | its checks, against a throwaway repo |
 
 ## Limits
 

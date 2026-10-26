@@ -8,13 +8,16 @@
 #   3. has sweep workers read those, one per project, and adds a card for each that needs the human,
 #      or a nudge card for the coordinator itself;
 #   4. wakes the coordinator only if something new arrived, it is idle, and it is not waiting on the
-#      human (its coord-card-open label is empty).
+#      human (its coord-card-open label is empty);
+#   5. once an hour, proposes closing the sessions whose PR merged and whose work is over, as accept
+#      cards (propose-archive.sh). Nothing here ever archives; the coordinator asks the human first.
 # A quiet tick starts no model, so it uses none of the plan's limits.
 #
 # Test knobs: COORD_STATE_ROOT, COORD_RECORDS_DIR, COORD_ID (serve this session as the coordinator),
 # COORD_SCOPE, COORD_ONLY_IDS (space-separated session ids), COORD_ANYTIME=1 (ignore working hours),
-# COORD_DRY_SEND=1 (log the wake instead of sending), COORD_ASSUME_IDLE=1, COORD_NOW (epoch seconds
-# standing in for the time). Working hours and the clock live in schedule.sh; clock.sh changes them.
+# COORD_DRY_SEND=1 (log the wake instead of sending it), COORD_ASSUME_IDLE=1,
+# COORD_NOW (epoch seconds standing in for the time). Working hours and the clock live in
+# schedule.sh; clock.sh changes them.
 
 set -uo pipefail
 export PATH="/Applications/Paseo.app/Contents/Resources/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
@@ -303,6 +306,19 @@ decide_wake() {
   fi
 }
 
+# --- Proposing closes ----------------------------------------------------------------------------
+
+# Once an hour per scope, accept cards for sessions whose work is over. propose-archive.sh holds the
+# rules and only adds cards; its added or skipped lines count towards the wake like any other card.
+propose_closes_hourly() {
+  local scope=$1 dir=$2 stamp=$2/propose-archive.last now
+  now=$(now_epoch)
+  [[ -f $stamp ]] && (( now - $(cat "$stamp") < 3600 )) && return 0
+  echo "$now" > "$stamp"
+  "$skill_dir/propose-archive.sh" "$scope" --add >> "$adds_file" 2>> "$state_root/tick.log" ||
+    log "error: propose-archive.sh failed"
+}
+
 # --- One coordinator -----------------------------------------------------------------------------
 
 serve() {
@@ -332,6 +348,7 @@ serve() {
     cards_from_sweep "$scope" "$work/changed.jsonl" "$work" > "$work/read.jsonl"
     remember_seen "$seen" "$work/read.jsonl"
   fi
+  propose_closes_hourly "$scope" "$dir"
 
   new=$(added_count)
   wake_result=$(decide_wake "$coordinator" "$scope" "$dir" "$new")

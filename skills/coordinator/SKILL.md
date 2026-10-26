@@ -44,7 +44,14 @@ Either way you see only this machine's Paseo daemon. Say so if the human mention
 - Never put customer data, personal data or secrets in a card, a label or a relayed message. A
   colleague's name the human typed may be shown back to them, nowhere else.
 - Never show agent IDs, label names or tool output to the human unless they ask.
-- Never archive a workspace: that can delete its worktree. Archive a session only on the human's word.
+- Never archive a session without the human's yes for it, and never archive a workspace directly.
+  Archiving a workspace's last session archives the workspace too, and Paseo then deletes its
+  worktree with `git worktree remove --force`. So before archiving, check the worktree:
+  `git -C <cwd> status --porcelain` prints nothing and no commit is missing from origin or the merged
+  PR. If something is there, tell the human what and don't archive.
+- Paseo's own `daemon.autoArchiveAfterMerge` stays off: it archives a workspace the moment its PR
+  merges, even mid-release. If `paseo daemon config get daemon.autoArchiveAfterMerge` shows `true`,
+  tell the human and offer to turn it off.
 
 ## 1. Sweep (silent)
 
@@ -179,7 +186,8 @@ A card is one of three kinds:
 - **Decide**: one word answers it. Give a recommendation and its reason; offer three options at most.
 - **Do**: only the human can do it (run a command, sign in, merge, create a credential). Give the exact
   command or link in one copyable block. They reply `done`.
-- **Accept**: Ready work. Show the evidence. Ask: accept and close the session, or what next?
+- **Accept**: Ready work. Show the evidence. Ask: accept and close the session, or what next? When
+  closing is the only ask, the card joins the close batch instead (see Closing finished sessions).
 
 ```
 [2/5] 🔑 Google sign-in · last looked 3h ago
@@ -298,6 +306,10 @@ asking whether to close the session. A session that has sent messages to other s
 and never gets a card: fold its asks into the streams they concern yourself (step 7). Its log,
 `~/.local/state/coordinator/tick.log`, has a line only for ticks that read, added or woke something.
 
+**Close proposals.** Once an hour the worker also runs `propose-archive.sh`, which adds an `accept`
+card, "Close this session?", for each session whose PR has merged and whose work looks over. It never
+archives; see Closing finished sessions.
+
 **The inbox.** `~/.local/state/coordinator/<scope>/inbox.md`, where `<scope>` is `all` or your
 `projectId`. One line per card, in arrival order:
 
@@ -329,6 +341,38 @@ session before showing it, and tick it off if the session has moved on. A `nudge
 not the human: send the nudge (step 5) between cards and tick it off. A `remind` card returns the
 stream as its current kind; re-read the session to build it, and clear `coord-parked-until` when the
 card closes.
+
+## Closing finished sessions
+
+Be proactive about closing: every finished session left open is one more thing on the human's
+sidebar and mind. But never archive one without their yes.
+
+**Where proposals come from.** The sweep adds an `accept` card when a session has delivered its answer
+or its work. Once an hour `propose-archive.sh` adds one for each session whose PR has merged, with
+nothing running or waiting, no open card or reminder to come, an hour without activity, and a clean,
+pushed worktree.
+
+**Check before proposing.** For each candidate, confirm the work is truly done: its PR merged
+(`gh pr view <n> --json state,mergedAt`), its last message asks nothing and promises no next step,
+nothing is running, no reminder is set, and its worktree is clean and pushed. If any of that is
+unclear, leave it out and ask the session instead.
+
+**One card for the batch.** Gather every close-ready session into one card at a natural break, after
+the current card or when the queue is otherwise empty, rather than a card each. It ends with its own
+options line:
+
+```
+Close 3 finished sessions?
+1. 🔑 Google sign-in · [PR #1406](https://github.com/acme/app/pull/1406) merged
+2. 🔗 Universal links · [PR #1410](https://github.com/acme/app/pull/1410) merged
+3. ✈️ TestFlight limit · answered: 100 internal testers per app
+(y = archive all / pick 1 3 / n = keep all, or reply in your own words)
+```
+
+Archive only the sessions the human confirms, with `archive_agent`, checking each worktree first
+(Ground rules). Then `inbox.sh done` for every session in the batch, kept ones too; a kept session is
+not proposed again for the same PR. An Accept card that needs the human to look at the work first (a
+document, a design, test results) stays a card of its own until they have.
 
 ## Clock
 
