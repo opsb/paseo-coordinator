@@ -9,11 +9,17 @@
 # appended) or skipped (a card with this key exists, or a reminder for a session that already has an
 # open card).
 #
+# keep stores the sweep worker's full report for a card (JSON on stdin), so the coordinator can show
+# the card without reading the session again. report prints it, with its key, only while that card is
+# the session's open card. Closing the card removes it.
+#
 # Usage:
-#   inbox.sh path <scope>
-#   inbox.sh add  <scope> <key> <session-id> <motif> <stream> <kind> <ask>
-#   inbox.sh open <scope>
-#   inbox.sh done <scope> <session-id>
+#   inbox.sh path   <scope>
+#   inbox.sh add    <scope> <key> <session-id> <motif> <stream> <kind> <ask>
+#   inbox.sh open   <scope>
+#   inbox.sh done   <scope> <session-id>
+#   inbox.sh keep   <scope> <key> <session-id> < report.json
+#   inbox.sh report <scope> <session-id>
 #
 # <scope> is `all` or a Paseo projectId. A card line reads:
 #   - [ ] 🔑 Google sign-in · do · Run the gate sync · <session-id> · 2026-10-25 18:52 <!-- <key> -->
@@ -31,6 +37,10 @@ ensure_inbox() {
   [[ -f $inbox ]] && return
   mkdir -p "$(dirname "$inbox")"
   printf '# Coordinator inbox\n\nOne line per card, in arrival order. The tick worker adds; the coordinator ticks off.\n\n' > "$inbox"
+}
+
+report_path() {
+  echo "$state_root/$1/reports/$2.json"
 }
 
 lock_inbox() {
@@ -77,6 +87,25 @@ add_card() {
   fi
 }
 
+open_key_for() {
+  sed -n -E "s/^- \[ \] .* · $2 · .* <!-- (.*) -->$/\1/p" "$1" | tail -1
+}
+
+keep_report() {
+  local report=$1 key=$2
+  mkdir -p "$(dirname "$report")"
+  jq --arg key "$key" '. + {key: $key}' > "$report.tmp" && mv "$report.tmp" "$report"
+}
+
+# The report only while it belongs to the session's open card; a replaced card's report is out of date.
+open_report() {
+  local inbox=$1 report=$2 session_id=$3 key
+  [[ -f $inbox && -f $report ]] || return 0
+  key=$(open_key_for "$inbox" "$session_id")
+  [[ -n $key ]] || return 0
+  jq --arg key "$key" 'select(.key == $key)' "$report"
+}
+
 open_cards() {
   grep -- '^- \[ \] ' "$1" || true
 }
@@ -102,8 +131,11 @@ main() {
       [[ -f $inbox ]] || exit 0
       lock_inbox "$inbox"
       tick_off "$inbox" "$3"
+      rm -f "$(report_path "$scope" "$3")"
       ;;
-    *) echo "usage: inbox.sh path|add|open|done <scope> ..." >&2; exit 2 ;;
+    keep) keep_report "$(report_path "$scope" "$4")" "$3" ;;
+    report) open_report "$inbox" "$(report_path "$scope" "$3")" "$3" ;;
+    *) echo "usage: inbox.sh path|add|open|done|keep|report <scope> ..." >&2; exit 2 ;;
   esac
 }
 

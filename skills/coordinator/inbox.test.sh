@@ -102,5 +102,36 @@ expect "a reminder for a session with an open card adds nothing" 0 "$(added_coun
 expect "the skip is logged" 1 "$(log_has "card skipped: $B remind")"
 expect "the due reminder's label is cleared" 1 "$(log_has "dry: label coord-parked-until= on $B")"
 
+# --- inbox.sh keep and report: the worker's full report behind each card --------------------------
+
+C=cccccccc-0000-0000-0000-000000000003
+report_ask() { inbox report all "$1" | jq -r '.ask // empty'; }
+
+inbox add all "$C@h1" "$C" "" Third decide "Ship it?" > /dev/null
+echo '{"id": "x", "ask": "Ship it?", "recommend": "yes"}' | inbox keep all "$C@h1" "$C"
+expect "the report for the open card is shown" "Ship it?" "$(report_ask "$C")"
+expect "the report carries the card's key" "$C@h1" "$(inbox report all "$C" | jq -r .key)"
+echo '{"ask": "Old ask"}' | inbox keep all "$C@h0" "$C"
+expect "a report for another key is not shown" "" "$(report_ask "$C")"
+echo '{"ask": "Ship it?"}' | inbox keep all "$C@h1" "$C"
+inbox done all "$C"
+expect "a closed card has no report" "" "$(report_ask "$C")"
+expect "closing a card removes its report" 0 "$(ls "$COORD_STATE_ROOT/all/reports" | grep -c "$C" || true)"
+expect "a session never reported has none" "" "$(report_ask "$B")"
+
+# --- tick.sh: sweep cards keep their reports -----------------------------------------------------
+
+D=dddddddd-0000-0000-0000-000000000004
+W=$T/work
+mkdir -p "$W"
+jq -n -c --arg id "$D" '{id: $id, hash: "444444444444", labels: {}}' > "$W/sessions.jsonl"
+jq -n --arg id "$D" '[{id: $id, stream: "Fourth", class: "Blocked", kind: "decide", ask: "Merge now?",
+  recommend: "yes, CI is green", links: [{label: "PR #1", url: "https://github.com/a/b/pull/1", state: "approved"}]}]' \
+  > "$W/out-proj.json"
+cards_from_sweep all "$W/sessions.jsonl" "$W" > /dev/null
+expect "a sweep card is added" 1 "$(open_for "$D")"
+expect "its report is kept" "yes, CI is green" "$(inbox report all "$D" | jq -r .recommend)"
+expect "the report keeps the links" "https://github.com/a/b/pull/1" "$(inbox report all "$D" | jq -r '.links[0].url')"
+
 printf '%s passed, %s failed\n' "$pass" "$fail"
 (( fail == 0 ))

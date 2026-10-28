@@ -229,6 +229,14 @@ add_card() {
   [[ $outcome == added ]] || log "card $outcome: $id $kind"
 }
 
+# Keeps the worker's full entry for the card, so the coordinator can show it without reading the
+# session again.
+keep_report() {
+  local scope=$1 key=$2 id=$3 report=$4
+  jq --arg id "$id" '.[] | select(.id == $id)' "$report" \
+    | "$skill_dir/inbox.sh" keep "$scope" "$key" "$id"
+}
+
 set_label() {
   local id=$1 label=$2
   if [[ ${COORD_DRY_SEND:-} == 1 ]]; then
@@ -321,7 +329,7 @@ close_stale_cards() {
 
 # Adds a card per report entry that needs someone, and prints the sessions it read successfully.
 cards_from_sweep() {
-  local scope=$1 sessions=$2 work=$3 out card id
+  local scope=$1 sessions=$2 work=$3 out card id key
   for out in "$work"/out-*.json; do
     if ! jq -e 'type == "array"' "$out" > /dev/null 2>&1; then
       log "worker failed: $(head -c 200 "$out" | tr '\n' ' ')"
@@ -332,13 +340,13 @@ cards_from_sweep() {
     done
     while read -r card; do
       id=$(jq -r .id <<< "$card")
-      add_card "$scope" \
-        "$id@$(jq -r --arg id "$id" 'select(.id == $id) | .hash' "$sessions")" \
-        "$id" \
+      key="$id@$(jq -r --arg id "$id" 'select(.id == $id) | .hash' "$sessions")"
+      add_card "$scope" "$key" "$id" \
         "$(jq -r --arg id "$id" 'select(.id == $id) | .labels["coord-motif"] // ""' "$sessions")" \
         "$(jq -r .stream <<< "$card")" \
         "$(jq -r .kind <<< "$card")" \
         "$(jq -r .ask <<< "$card")"
+      keep_report "$scope" "$key" "$id" "$out"
     done < <(cards_from_report "$out" "$(jq -s -c 'map(select((.sends_to // []) | length > 0) | .id)' "$sessions")")
     jq -r '.[].id' "$out" | while read -r id; do
       jq -c --arg id "$id" 'select(.id == $id)' "$sessions"

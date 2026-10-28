@@ -188,14 +188,17 @@ without clocking on.
 ```bash
 inbox.sh open <scope>                  # list open cards
 inbox.sh done <scope> <session-id>     # tick off that session's card
+inbox.sh report <scope> <session-id>   # the sweep worker's full report behind its open card
 inbox.sh path <scope>                  # where the inbox file is
 inbox.sh add <scope> <key> <session-id> <motif> <stream> <kind> <ask>   # used by tick.sh
-bash inbox.test.sh                     # card replacing, closing and reminders; no real session
+inbox.sh keep <scope> <key> <session-id> < report.json                  # used by tick.sh
+bash inbox.test.sh                     # cards, their reports, closing and reminders; no real session
 ```
 
 `<scope>` is `all` or a Paseo projectId. The worker adds and replaces cards, and ticks off those whose
 session no longer waits; the coordinator ticks off the cards it closes. Both go through this script
-and its lock, never an editor. `add` prints `added`, `replaced` or `skipped`. A card line reads:
+and its lock, never an editor. `add` prints `added`, `replaced` or `skipped`. The worker keeps each sweep card's full report, so the
+coordinator shows the card without reading the session again; closing the card removes it. A card line reads:
 
 ```
 - [ ] 🔑 Google sign-in · do · Run the gate sync · <session-id> · 2026-10-25 18:52 <!-- <key> -->
@@ -285,6 +288,7 @@ State, in `~/.local/state/coordinator/`:
 | `tick.log` | one line per tick that read, added or woke something, and any error |
 | `launchd.log` | anything the job printed outside the log; empty when all is well |
 | `<scope>/inbox.md` | the cards |
+| `<scope>/reports/<session-id>.json` | the sweep worker's report behind each open card |
 | `<scope>/seen.json` | each session's last-read state, so it is read again only when its conversation changes |
 | `<scope>/wake-pending` | new cards the coordinator has not been woken for yet |
 | `<scope>/propose-archive.last` | when `propose-archive.sh` last ran for that scope, so it runs once an hour |

@@ -78,7 +78,7 @@ Either way you see only this machine's Paseo daemon. Say so if the human mention
      to catch up (with `COORD_ANYTIME=1` when the worker is off: a one-off read that does not clock on),
      and take the queue from
      `inbox.sh open <scope>`. Working, Parked and Relay come from status and labels. Read a session
-     yourself only to build its card.
+     yourself only when its card has no report (see Inbox).
    - **Sweep workers**, always in `all` scope, and in project scope once a sitting runs long. For each
      project, write its sessions to a JSON array in your scratchpad (`id`, `workspace_title`,
      `status`, `createdAt`, `lastUserMessageAt`, `requiresAttention`, `attentionReason`, `labels`)
@@ -242,7 +242,7 @@ When the human answers:
 Relays to one session go in order: if one is still running, wait for its notification before starting
 the next for that session. When a relay fails, say so in one line at the top of the next card (step 6)
 and retry it or do it yourself. Keep inline only what the next card depends on: `inbox.sh done`,
-`inbox.sh open` and `coord-card-open`.
+`inbox.sh open`, `inbox.sh report` and `coord-card-open`.
 
 **Remind** (`remind tomorrow`, `remind me at 3`, `remind Monday`): set `coord-parked-until` to that
 time as an ISO timestamp in London time and `coord-next` to the next step, close the card, and say it
@@ -355,8 +355,15 @@ flag still set. With nothing left, clear the flag, and if the worker is off, say
 quiet: "Inbox worker is off until 08:00 tomorrow; nothing will reach you here until then. Clock on,
 or change the hours?" A skipped card stays open and comes round again.
 
-**Card kinds from the worker.** A card may be stale by the time it reaches the top: re-read its
-session before showing it, and tick it off if the session has moved on. A `nudge` card is for you,
+**Building a card from its report.** `inbox.sh report <scope> <session-id>` prints the sweep worker's
+full report behind the open card, in the shape `sweep-worker.md` defines: the links with their
+states, the human's last words, what changed, the ask, a recommendation and the evidence. Build the
+card from it without reading the session again. The worker ticks off a card whose session has moved
+on, so an open card's report is current. Read the session yourself only when the card has no report
+(a `remind` card, or one from `propose-archive.sh`), when the gap is over a day and the card needs
+the decisions already made, or when the human asks for `more` or `refresher`.
+
+**Card kinds from the worker.** A `nudge` card is for you,
 not the human: send the nudge (step 5) between cards and tick it off. A `remind` card returns the
 stream as its current kind; re-read the session to build it. The worker clears `coord-parked-until`
 once the card exists.
