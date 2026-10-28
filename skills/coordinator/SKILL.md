@@ -223,17 +223,26 @@ Every card ends with this options line, `remind <when>` included.
   most, then the ask again. Their asking means the gap table under-sized this stream, so give its
   remaining cards this sitting one size more.
 
-## 5. Relay, then move on
+## 5. Relay in the background, then move on
 
 When the human answers:
 
-1. `send_agent_prompt` with a message that stands alone: the answer, the reason, any constraint the
-   human added. The session may have compacted. Begin it with `[from the human, via coordinator]`. If
-   the session is running, let the turn finish unless the answer changes what it is doing now. After a
-   `done`, relay it unless the session is already watching for the result itself.
-2. Update that session's labels (see State).
-3. Close the card (see Inbox), then confirm in a few words and show the next card in the same reply.
-   The human never waits on an agent.
+1. Write the relay: a message that stands alone, with the answer, the reason and any constraint the
+   human added. The session may have compacted. Begin it with `[from the human, via coordinator]`.
+   After a `done`, relay it unless the session is already watching for the result itself.
+2. Hand the slow work to one background subagent (`Agent`, `run_in_background: true`,
+   `model: "haiku"`): send the relay with `send_agent_prompt`, word for word; write the session's labels
+   (see State); for a close batch, check each worktree and archive (Ground rules). Give it the exact
+   message, session IDs and label values, so it decides nothing. If the session is running, tell it to
+   wait until `get_agent_status` shows idle before sending, unless the answer changes what the session
+   is doing now. Ask for one line back: done, or what failed and why.
+3. Close the card yourself at once (see Inbox), confirm in a few words and show the next card in the
+   same reply. The human never waits on an agent, yours included.
+
+Relays to one session go in order: if one is still running, wait for its notification before starting
+the next for that session. When a relay fails, say so in one line at the top of the next card (step 6)
+and retry it or do it yourself. Keep inline only what the next card depends on: `inbox.sh done`,
+`inbox.sh open` and `coord-card-open`.
 
 **Remind** (`remind tomorrow`, `remind me at 3`, `remind Monday`): set `coord-parked-until` to that
 time as an ISO timestamp in London time and `coord-next` to the next step, close the card, and say it

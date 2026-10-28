@@ -69,6 +69,9 @@ only you can take, and an Accept card for finished work.
 | `more` | The session's last message in full. |
 | anything else | Passed to the session as your answer, with your reason and any constraint you add. |
 
+The coordinator hands each relay, label write and archive to a background agent and shows the next
+card at once. A relay that fails is reported in one line at the top of the following card.
+
 ### Working hours and the clock
 
 A background worker, the inbox worker, runs every minute between 08:00 and 22:00 London time. Each
