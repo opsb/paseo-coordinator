@@ -44,11 +44,15 @@ Either way you see only this machine's Paseo daemon. Say so if the human mention
 - Never put customer data, personal data or secrets in a card, a label or a relayed message. A
   colleague's name the human typed may be shown back to them, nowhere else.
 - Never show agent IDs, label names or tool output to the human unless they ask.
-- Never archive a session without the human's yes for it, and never archive a workspace directly.
-  Archiving a workspace's last session archives the workspace too, and Paseo then deletes its
-  worktree with `git worktree remove --force`. So before archiving, check the worktree:
-  `git -C <cwd> status --porcelain` prints nothing and no commit is missing from origin or the merged
-  PR. If something is there, tell the human what and don't archive.
+- Never archive a session or a workspace without the human's yes for it. Archiving a workspace, or
+  its last session, can make Paseo delete its worktree with `git worktree remove --force`. So before
+  archiving either, check the worktree: `git -C <cwd> status --porcelain` prints nothing and no
+  commit is missing from origin or the merged PR. If something is there, tell the human what and
+  don't archive. When sessions are archived but their workspace stays behind, ask once and archive
+  the empty workspaces with `archive_workspace` (another machine's daemon: `paseo workspace archive
+  <id>` over ssh). If the worktree folder survives, remove it with `git worktree remove <path>`,
+  never `--force`. Never archive a `local` workspace that points at a real folder (a project
+  checkout or the vault); those are not throwaway worktrees.
 - Paseo's own `daemon.autoArchiveAfterMerge` stays off: it archives a workspace the moment its PR
   merges, even mid-release. If `paseo daemon config get daemon.autoArchiveAfterMerge` shows `true`,
   tell the human and offer to turn it off.
