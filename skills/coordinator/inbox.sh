@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# The coordinator's card inbox: one markdown line per card. The tick worker only adds cards; the
-# coordinator only ticks them off. Every change takes the same lock, so neither loses the other's.
-# The file is an inbox, not an order: the coordinator ranks open cards itself.
+# The coordinator's card inbox: one markdown line per card, and at most one open card per session.
+# The tick worker adds cards, replaces a session's card when its conversation moves on, and ticks off
+# cards whose session no longer waits; the coordinator ticks off the cards it closes. Every change
+# takes the same lock, so neither loses the other's. The file is an inbox, not an order: the
+# coordinator ranks open cards itself.
+#
+# add prints what it did: added, replaced (the session's open card was ticked off and this one
+# appended) or skipped (a card with this key exists, or a reminder for a session that already has an
+# open card).
 #
 # Usage:
 #   inbox.sh path <scope>
@@ -37,21 +43,38 @@ single_line() {
   tr '\n\r' '  ' <<< "$1" | sed 's/  */ /g; s/ *$//'
 }
 
-has_card_for() {
-  local inbox=$1 key=$2 session_id=$3
-  grep -qF -- "<!-- $key -->" "$inbox" || grep -q -- "^- \[ \] .* · $session_id · " "$inbox"
+has_key() {
+  grep -qF -- "<!-- $2 -->" "$1"
 }
 
-add_card() {
-  local inbox=$1 key=$2 session_id=$3 motif=$4 stream=$5 kind=$6 ask=$7
-  if has_card_for "$inbox" "$key" "$session_id"; then
-    echo skipped
-    return
-  fi
+has_open_card_for() {
+  grep -q -- "^- \[ \] .* · $2 · " "$1"
+}
+
+card_line() {
+  local key=$1 session_id=$2 motif=$3 stream=$4 kind=$5 ask=$6
   printf -- '- [ ] %s · %s · %s · %s · %s <!-- %s -->\n' \
     "$(single_line "${motif:+$motif }$stream")" "$kind" "$(single_line "$ask")" \
-    "$session_id" "$(date '+%Y-%m-%d %H:%M')" "$key" >> "$inbox"
-  echo added
+    "$session_id" "$(date '+%Y-%m-%d %H:%M')" "$key"
+}
+
+# A new key for a session that already has an open card means its conversation moved on: the old ask
+# is out of date, so the new card takes its place. A reminder never displaces a card; the open card
+# already brings the stream back.
+add_card() {
+  local inbox=$1 key=$2 session_id=$3 kind=$6
+  if has_key "$inbox" "$key"; then
+    echo skipped
+  elif ! has_open_card_for "$inbox" "$session_id"; then
+    card_line "${@:2}" >> "$inbox"
+    echo added
+  elif [[ $kind == remind ]]; then
+    echo skipped
+  else
+    tick_off "$inbox" "$session_id"
+    card_line "${@:2}" >> "$inbox"
+    echo replaced
+  fi
 }
 
 open_cards() {

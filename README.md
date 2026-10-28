@@ -103,11 +103,13 @@ first decides whether the worker is on:
 
 When it is off, the tick stops there and costs nothing. When it is on, it:
 
-- brings back any stream whose reminder has passed, as a card;
+- ticks off each card whose session no longer waits: archived, running again, answered since the
+  card was added, or overtaken by a newer read; the session is then read afresh when it next stops;
+- brings back any stream whose reminder has passed, as a card, and clears the reminder;
 - finds sessions that have stopped since the last tick and whose conversation has changed, and has
   one read-only sweep worker per project read them;
 - adds a card to the inbox for each session that needs you, and a nudge for each stuck one, which the
-  coordinator handles without you;
+  coordinator handles without you. A session has at most one open card: a newer one replaces it;
 - wakes the coordinator only if new cards arrived, you are not mid-card, and it is idle. Otherwise the
   cards wait in the inbox until the current card closes;
 - once an hour, adds a "Close this session?" card for each session whose PR has merged and whose
@@ -185,10 +187,12 @@ inbox.sh open <scope>                  # list open cards
 inbox.sh done <scope> <session-id>     # tick off that session's card
 inbox.sh path <scope>                  # where the inbox file is
 inbox.sh add <scope> <key> <session-id> <motif> <stream> <kind> <ask>   # used by tick.sh
+bash inbox.test.sh                     # card replacing, closing and reminders; no real session
 ```
 
-`<scope>` is `all` or a Paseo projectId. The worker only adds cards and the coordinator only ticks
-them off, both through this script and its lock, never with an editor. A card line reads:
+`<scope>` is `all` or a Paseo projectId. The worker adds and replaces cards, and ticks off those whose
+session no longer waits; the coordinator ticks off the cards it closes. Both go through this script
+and its lock, never an editor. `add` prints `added`, `replaced` or `skipped`. A card line reads:
 
 ```
 - [ ] 🔑 Google sign-in · do · Run the gate sync · <session-id> · 2026-10-25 18:52 <!-- <key> -->
@@ -300,6 +304,7 @@ Repository:
 | `skills/coordinator/sweep-worker.md` | the sweep worker's brief and report format |
 | `skills/coordinator/propose-archive.sh` | proposes closing finished sessions, as inbox cards; never archives |
 | `skills/coordinator/propose-archive.test.sh` | its checks, against a throwaway repo |
+| `skills/coordinator/inbox.test.sh` | checks that cards stay current, against throwaway records |
 
 ## Limits
 

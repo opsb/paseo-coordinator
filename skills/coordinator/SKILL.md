@@ -307,8 +307,12 @@ project with changes at API rates; on a subscription login it draws on plan limi
 adds a card for each session that needs the human, a `nudge` card for each Stuck one, and a `remind`
 card when a session's `coord-parked-until` passes. Finished work always arrives as an `accept` card
 asking whether to close the session. A session that has sent messages to other sessions is a relay
-and never gets a card: fold its asks into the streams they concern yourself (step 7). Its log,
-`~/.local/state/coordinator/tick.log`, has a line only for ticks that read, added or woke something.
+and never gets a card: fold its asks into the streams they concern yourself (step 7). Before
+any of that, it ticks off each open card whose session no longer waits: archived, running again,
+sent a message after the card was added, or read again by a sweep that found something newer. It
+then forgets that session's last read, so the sweep reads it afresh when it next stops. Its log,
+`~/.local/state/coordinator/tick.log`, has a line only for ticks that read, added, closed or woke
+something, plus one line per sweep verdict and per card closed, replaced or skipped.
 
 **Close proposals.** Once an hour the worker also runs `propose-archive.sh`, which adds an `accept`
 card, "Close this session?", for each session whose PR has merged and whose work looks over. It never
@@ -321,8 +325,10 @@ archives; see Closing finished sessions.
 - [ ] 🔑 Google sign-in · do · Run the gate sync · <session-id> · 2026-10-25 18:52 <!-- <key> -->
 ```
 
-The worker only adds lines, never twice for the same session and log state, and never while that
-session has an open card. You only tick lines off. Use the script for both, never an editor, so
+The worker adds lines, never twice for the same session and log state, and keeps one open card per
+session: a newer card for a session replaces its open one, which is ticked off, except that a
+reminder never displaces a card. It also ticks off cards whose session no longer waits. You only
+tick lines off. Use the script for both, never an editor, so
 neither loses the other's change: `inbox.sh open <scope>` lists open cards and
 `inbox.sh done <scope> <session-id>` ticks off that session's card. The file is an inbox, not the
 order: rank open cards with step 2 every time.
@@ -343,8 +349,8 @@ or change the hours?" A skipped card stays open and comes round again.
 **Card kinds from the worker.** A card may be stale by the time it reaches the top: re-read its
 session before showing it, and tick it off if the session has moved on. A `nudge` card is for you,
 not the human: send the nudge (step 5) between cards and tick it off. A `remind` card returns the
-stream as its current kind; re-read the session to build it, and clear `coord-parked-until` when the
-card closes.
+stream as its current kind; re-read the session to build it. The worker clears `coord-parked-until`
+once the card exists.
 
 ## Closing finished sessions
 
@@ -444,7 +450,7 @@ removed; set an empty string to unset one.
 | `coord-human-at` | ISO time the human last acted on it through you | after each answer |
 | `coord-next` | the agreed next step | after each answer or park |
 | `coord-card-open` | `yes` while a card is in front of the human, on your own session only | when a card is shown, and cleared when it closes |
-| `coord-parked-until` | ISO time to bring the stream back, or empty | on park or remind, and cleared when its card closes |
+| `coord-parked-until` | ISO time to bring the stream back, or empty | on park or remind; the worker clears it once the reminder card exists |
 
 **Last touch** is the latest of:
 

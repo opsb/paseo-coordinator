@@ -2,20 +2,23 @@
 # One tick of the coordinator's inbox worker. launchd runs it every minute (see tick-install.sh).
 #
 # For each coordinator session (label coord-role=coordinator) it:
-#   1. adds a reminder card for each session whose coord-parked-until has passed;
-#   2. finds the sessions in scope that have stopped and whose conversation changed since the last
+#   1. ticks off each open card whose session no longer waits: archived, running again, or sent a
+#      message after the card was added;
+#   2. adds a reminder card for each session whose coord-parked-until has passed, then clears it;
+#   3. finds the sessions in scope that have stopped and whose conversation changed since the last
 #      tick, judged by a hash of the log tail, because label writes also move updatedAt;
-#   3. has sweep workers read those, one per project, and adds a card for each that needs the human,
-#      or a nudge card for the coordinator itself;
-#   4. wakes the coordinator only if something new arrived, it is idle, and it is not waiting on the
+#   4. has sweep workers read those, one per project, and adds a card for each that needs the human,
+#      or a nudge card for the coordinator itself. A new card replaces the session's open one, whose
+#      ask the conversation has overtaken. Each verdict, and each card not added, goes in the log;
+#   5. wakes the coordinator only if something new arrived, it is idle, and it is not waiting on the
 #      human (its coord-card-open label is empty);
-#   5. once an hour, proposes closing the sessions whose PR merged and whose work is over, as accept
+#   6. once an hour, proposes closing the sessions whose PR merged and whose work is over, as accept
 #      cards (propose-archive.sh). Nothing here ever archives; the coordinator asks the human first.
 # A quiet tick starts no model, so it uses none of the plan's limits.
 #
 # Test knobs: COORD_STATE_ROOT, COORD_RECORDS_DIR, COORD_ID (serve this session as the coordinator),
 # COORD_SCOPE, COORD_ONLY_IDS (space-separated session ids), COORD_ANYTIME=1 (ignore working hours),
-# COORD_DRY_SEND=1 (log the wake instead of sending it), COORD_ASSUME_IDLE=1,
+# COORD_DRY_SEND=1 (log the wake and label writes instead of making them), COORD_ASSUME_IDLE=1,
 # COORD_NOW (epoch seconds standing in for the time). Working hours and the clock live in
 # schedule.sh; clock.sh changes them.
 
@@ -217,27 +220,103 @@ cards_from_report() {
       end' "$report"
 }
 
-# Records each outcome (added or skipped) in $adds_file, which serve sets per coordinator.
+# Records each outcome (added, replaced or skipped) in $adds_file, which serve sets per coordinator.
+# Only added cards leave no log line: the others are where a card could go missing.
 add_card() {
-  local scope=$1 key=$2 id=$3 motif=$4 stream=$5 kind=$6 ask=$7
-  "$skill_dir/inbox.sh" add "$scope" "$key" "$id" "$motif" "$stream" "$kind" "$ask" >> "$adds_file"
+  local scope=$1 key=$2 id=$3 motif=$4 stream=$5 kind=$6 ask=$7 outcome
+  outcome=$("$skill_dir/inbox.sh" add "$scope" "$key" "$id" "$motif" "$stream" "$kind" "$ask")
+  echo "$outcome" >> "$adds_file"
+  [[ $outcome == added ]] || log "card $outcome: $id $kind"
 }
 
+set_label() {
+  local id=$1 label=$2
+  if [[ ${COORD_DRY_SEND:-} == 1 ]]; then
+    log "dry: label $label on $id"
+  else
+    paseo agent update "$id" --label "$label" > /dev/null || log "error: could not set $label on $id"
+  fi
+}
+
+# Once its card exists the reminder has done its work, so its label is cleared: a due reminder
+# otherwise stays due on every tick and still reads as set.
 add_reminder_cards() {
-  local scope=$1 session
+  local scope=$1 session id
   while read -r session; do
+    id=$(jq -r .id <<< "$session")
     add_card "$scope" \
       "$(jq -r '"\(.id)@remind@\(.labels["coord-parked-until"])"' <<< "$session")" \
-      "$(jq -r .id <<< "$session")" \
+      "$id" \
       "$(jq -r '.labels["coord-motif"] // ""' <<< "$session")" \
       "$(jq -r '.labels["coord-gist"] // .workspace_title' <<< "$session")" \
       remind \
       "$(jq -r '"Reminder set for \(.labels["coord-parked-until"]). Next: \(.labels["coord-next"] // "see the session")"' <<< "$session")"
+    set_label "$id" coord-parked-until=
   done
 }
 
 added_count() {
-  grep -c '^added$' "$adds_file" || true
+  grep -c -E '^(added|replaced)$' "$adds_file" || true
+}
+
+# --- Closing cards whose session no longer waits -------------------------------------------------
+
+records_by_id() {
+  jq -n -c '[inputs | {key: .id, value: {archivedAt, status: .lastStatus, lastUserMessageAt}}]
+    | from_entries' "$records_dir"/*/*.json
+}
+
+# Each open card as its session id, the epoch second it was added, and its key.
+open_card_sessions() {
+  "$skill_dir/inbox.sh" open "$1" \
+    | sed -n -E 's/.* · ([0-9a-f-]{36}) · ([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}) <!-- (.*) -->$/\1 \2 \3/p' \
+    | while read -r id day time key; do
+        printf '%s %s %s\n' "$id" "$(date -j -f '%Y-%m-%d %H:%M' "$day $time" +%s)" "$key"
+      done
+}
+
+# Why a card no longer stands, or nothing. A message after the card was added, from the human or
+# relayed by the coordinator, answered it; a running session is being worked on; a sweep card whose
+# log hash is no longer the one last read was overtaken by later conversation. The card's time is to
+# the minute, hence the 59 seconds.
+stale_reason() {
+  local id=$1 added=$2 key=$3 records=$4 seen=$5
+  jq -r -n --arg id "$id" --argjson added "$added" --arg key "$key" --argjson records "$records" \
+      --slurpfile seen "$seen" '
+    def epoch: sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;
+    ($records[$id] // null) as $record
+    | ($key | capture("@(?<hash>[0-9a-f]{12})$").hash // null) as $hash
+    | if $record == null then "gone"
+      elif $record.archivedAt != null then "archived"
+      elif $record.status == "running" then "running"
+      elif ($record.lastUserMessageAt // "") != "" and ($record.lastUserMessageAt | epoch) > $added + 59
+        then "answered"
+      elif $hash != null and ($seen[0][$id].hash // $hash) != $hash then "overtaken"
+      else empty end'
+}
+
+# Forgets the closed sessions, so the sweep reads each afresh instead of taking its latest
+# conversation as already carded.
+forget_seen() {
+  local seen=$1 ids=$2
+  [[ -n $ids ]] || return 0
+  jq --argjson ids "$(jq -R . <<< "$ids" | jq -s -c .)" 'delpaths($ids | map([.]))' "$seen" \
+    > "$seen.tmp" && mv "$seen.tmp" "$seen"
+}
+
+# Prints the id of each card it ticks off.
+close_stale_cards() {
+  local scope=$1 seen=$2 records id added key reason closed
+  records=$(records_by_id)
+  closed=$(open_card_sessions "$scope" | while read -r id added key; do
+    reason=$(stale_reason "$id" "$added" "$key" "$records" "$seen")
+    [[ -n $reason ]] || continue
+    "$skill_dir/inbox.sh" done "$scope" "$id"
+    log "card closed: $id $reason"
+    echo "$id"
+  done)
+  forget_seen "$seen" "$closed"
+  [[ -z $closed ]] || echo "$closed"
 }
 
 # Adds a card per report entry that needs someone, and prints the sessions it read successfully.
@@ -248,6 +327,9 @@ cards_from_sweep() {
       log "worker failed: $(head -c 200 "$out" | tr '\n' ' ')"
       continue
     fi
+    jq -r '.[] | "verdict: \(.id) \(.class) \(.kind // "-") \(.stream)"' "$out" | while read -r line; do
+      log "$line"
+    done
     while read -r card; do
       id=$(jq -r .id <<< "$card")
       add_card "$scope" \
@@ -323,7 +405,7 @@ propose_closes_hourly() {
 
 serve() {
   local coordinator=$1 coordinator_ids=$2 workspaces=$3 projects=$4
-  local scope dir seen work new reminders swept wake_result
+  local scope dir seen work new closed reminders swept wake_result
   scope=$(jq -r .scope <<< "$coordinator")
   dir=$state_root/$scope
   seen=$dir/seen.json
@@ -333,6 +415,7 @@ serve() {
   touch "$adds_file"
   [[ -f $seen ]] || echo '{}' > "$seen"
 
+  closed=$(close_stale_cards "$scope" "$seen" | grep -c . || true)
   sessions_in_scope "$scope" "$coordinator_ids" "$workspaces" "$projects" > "$work/sessions.jsonl"
   reminders=$(due_reminders < "$work/sessions.jsonl" | tee "$work/reminders.jsonl" | wc -l | tr -d ' ')
   add_reminder_cards "$scope" < "$work/reminders.jsonl"
@@ -353,8 +436,8 @@ serve() {
   new=$(added_count)
   wake_result=$(decide_wake "$coordinator" "$scope" "$dir" "$new")
   # Idle ticks leave no trace; log only a tick that read, added or woke something.
-  if (( swept > 0 || new > 0 )) || [[ $wake_result != none ]]; then
-    log "scope=$scope sessions=$(wc -l < "$work/sessions.jsonl" | tr -d ' ') label-only=$(wc -l < "$work/label-only.jsonl" | tr -d ' ') swept=$swept reminders=$reminders new=$new open=$(open_card_count "$scope") usage=\$$(sweep_usage "$work") wake=$wake_result"
+  if (( swept > 0 || new > 0 || closed > 0 || reminders > 0 )) || [[ $wake_result != none ]]; then
+    log "scope=$scope sessions=$(wc -l < "$work/sessions.jsonl" | tr -d ' ') label-only=$(wc -l < "$work/label-only.jsonl" | tr -d ' ') swept=$swept reminders=$reminders closed=$closed new=$new open=$(open_card_count "$scope") usage=\$$(sweep_usage "$work") wake=$wake_result"
   fi
   if [[ ${COORD_KEEP_WORK:-} == 1 ]]; then log "work kept in $work"; else rm -rf "$work"; fi
 }
