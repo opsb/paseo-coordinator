@@ -10,7 +10,7 @@ set -euo pipefail
 
 project_dir=$1
 sessions_file=$2
-brief="$(dirname "$0")/sweep-worker.md"
+brief="$(cd "$(dirname "$0")" && pwd)/sweep-worker.md"
 claude_bin=$(command -v claude || echo "$HOME/.local/bin/claude")
 accounts_script=$HOME/Projects/paseo-claude-accounts/scripts/claude-accounts.zsh
 
