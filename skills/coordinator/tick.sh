@@ -167,8 +167,9 @@ sent_to() {
     | grep -v -- "$1" | sort -u | jq -R . | jq -s -c .
 }
 
-# A session that has messaged other sessions is a relay: it never gets a card of its own.
-with_relay_targets() {
+# The sessions each one has messaged, for the sweep worker. Sending messages alone doesn't make a
+# relay: a worker coordinating with its peers still asks the human about its own work.
+with_sends_to() {
   local session
   while read -r session; do
     jq -c --argjson sends "$(sent_to "$(jq -r .id <<< "$session")")" '. + {sends_to: $sends}' <<< "$session"
@@ -197,17 +198,16 @@ sweep_usage() {
   cat "$1"/err-*.txt 2>/dev/null | sed -n 's/^sweep usage for .*: \$\([0-9.]*\).*/\1/p' | awk '{s += $1} END {printf "%.2f", s}'
 }
 
-# One card per report entry that needs someone. Relays (listed in $2) get none. An entry whose ask
-# is empty or says there is nothing to do is finished work: an Accept card asking to close the session.
+# One card per report entry that needs someone; the worker's class decides, so a Blocked session
+# gets its card whoever it has messaged. An entry whose ask is empty or says there is nothing to do
+# is finished work: an Accept card asking to close the session.
 cards_from_report() {
-  local report=$1 relays=${2:-[]}
-  jq -c --argjson relays "$relays" '
+  jq -c '
     def nothing_asked:
       (. // "") | ascii_downcase
       | test("^\\s*$") or test("^\\s*(none|n/a|nothing (required|needed|to do|pending)|no (action|further action)( needed| required)?)\\b");
     .[]
     | select(.class == "Blocked" or .class == "Ready" or .class == "Stuck")
-    | select(.id as $id | $relays | index($id) | not)
     | if .class != "Stuck" and (.ask | nothing_asked) then
         {id, stream, kind: "accept",
          ask: "Close this session? \(if (.since | nothing_asked) then "It finished with nothing pending." else .since end)"}
@@ -217,7 +217,7 @@ cards_from_report() {
         {id, stream, kind: "accept", ask}
       else
         {id, stream, kind: (.kind // "decide"), ask}
-      end' "$report"
+      end' "$1"
 }
 
 # Records each outcome (added, replaced or skipped) in $adds_file, which serve sets per coordinator.
@@ -347,7 +347,7 @@ cards_from_sweep() {
         "$(jq -r .kind <<< "$card")" \
         "$(jq -r .ask <<< "$card")"
       keep_report "$scope" "$key" "$id" "$out"
-    done < <(cards_from_report "$out" "$(jq -s -c 'map(select((.sends_to // []) | length > 0) | .id)' "$sessions")")
+    done < <(cards_from_report "$out")
     jq -r '.[].id' "$out" | while read -r id; do
       jq -c --arg id "$id" 'select(.id == $id)' "$sessions"
     done
@@ -430,7 +430,7 @@ serve() {
 
   moved_since_seen "$seen" < "$work/sessions.jsonl" | with_changed_conversation "$seen" > "$work/moved.jsonl"
   jq -c 'select(.changed | not)' "$work/moved.jsonl" > "$work/label-only.jsonl"
-  jq -c 'select(.changed)' "$work/moved.jsonl" | with_relay_targets > "$work/changed.jsonl"
+  jq -c 'select(.changed)' "$work/moved.jsonl" | with_sends_to > "$work/changed.jsonl"
   remember_seen "$seen" "$work/label-only.jsonl"
 
   swept=$(wc -l < "$work/changed.jsonl" | tr -d ' ')

@@ -12,7 +12,7 @@ brief.
 
 1. **Read.** `paseo logs <id> --filter text --tail 10` shows the latest exchange without tool calls.
    `paseo logs <id> --filter text | grep -A2 '^\[User\]' | tail -3` finds the last `[User]` entry.
-   Read further back only if the state is unclear; a session that relays to others may need 40
+   Read further back only if the state is unclear; a session that has messaged others may need 40
    entries. Entries carry no time and no sender, so judge who wrote a `[User]` entry by its wording:
    the human, a schedule (pr-shepherd), the coordinator (`[from the human, via coordinator]`), or
    another session.
@@ -25,12 +25,19 @@ brief.
 | Ready | the work is finished and nothing is pending, even if a later turn errored |
 | Stuck | the work is unfinished and the session errored, stopped with no next step, or is repeating itself |
 | Working | running, or idle waiting on CI, a bot or a schedule |
-| Relay | its `sends_to` list is not empty: it has sent messages to other sessions |
+| Relay | it acts as the human's proxy: it prompts other sessions on the human's behalf, and its last message asks the human nothing |
 | Parked | `[parked]` in the workspace title, or `coord-parked-until` in the future |
 
-   A Relay is Relay even when its last message asks the human for something: those asks belong to
-   the streams they concern. List each in `relay_asks` with the session it concerns, and the
-   coordinator folds it into that stream's card.
+   A session whose last message asks the human to decide or to do something is Blocked, even if it
+   has sent messages to other sessions.
+
+   Relay is only for a session the human uses as a proxy: it forwards the human's decisions and asks
+   to other sessions, as a manager does. `sends_to` lists the sessions this one has messaged, but a
+   session that messages its peers to coordinate its own work (sharing an environment, handing over a
+   revision) is not a Relay. When unsure, choose Blocked.
+
+   For a Relay, list in `relay_asks` each ask it has forwarded that still waits on the human, with the
+   session it concerns; the coordinator folds it into that stream's card.
 
 3. **Check.** For each Blocked or Ready claim that a cheap read-only check covers (PR state, CI, a
    ticket), run it and record the result. Drop asks that events have overtaken.

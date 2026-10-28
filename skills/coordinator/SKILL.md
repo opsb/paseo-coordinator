@@ -107,7 +107,7 @@ Either way you see only this machine's Paseo daemon. Say so if the human mention
 | Ready | the work is finished and nothing is pending, even if a later turn errored | yes |
 | Stuck | the work is unfinished and the session errored, stopped with no next step, or is repeating itself | nudge first |
 | Working | running, or idle waiting on CI, a bot or a schedule | no; one line |
-| Relay | prompts other sessions on the human's behalf (see step 7) | no; one line |
+| Relay | acts as the human's proxy, prompting other sessions on their behalf, and asks the human nothing (see step 7) | no; one line |
 | Parked | `[parked]` in the workspace title, or `coord-parked-until` in the future | no; count only |
 
 5. **Nudge** each Stuck session now, before the board: one prompt naming the next step, drawn from
@@ -115,9 +115,13 @@ Either way you see only this machine's Paseo daemon. Say so if the human mention
 6. **Re-check blockers.** Entries carry no time, so don't try to age a blocker. Re-check every Blocked
    item that a cheap read-only check covers (the PR is still open, the login is still expired), and
    drop or update what has moved.
-7. **Relays.** A session that prompts other sessions for the human is not a second coordinator unless
-   it carries the label. Fold its pending asks into the streams they concern, drop any it has
-   overtaken, and mention it to the human once so no session is prompted twice.
+7. **Relays.** A relay forwards the human's decisions and asks to other sessions, as a manager does.
+   A worker that messages its peers about its own work (sharing an environment, handing over a
+   revision) is not one. Blocked beats Relay: a session whose own last message asks the human to
+   decide or do something is Blocked and gets a card, whoever it has messaged. When unsure, card it:
+   a duplicate card costs a skip, a dropped ask costs hours. A relay is not a second coordinator
+   unless it carries the label. Fold a relay's pending asks into the streams they concern, drop any
+   it has overtaken, and mention it to the human once so no session is prompted twice.
 8. **Label** each session you have not seen before with `coord-gist` and `coord-motif` (see State):
    its stream's motif if another session in the stream has one, else a new one (see Motifs). Then
    make sure its workspace title starts with that motif.
@@ -315,8 +319,9 @@ writes move `updatedAt`, so it compares a hash of the log tail. That uses about 
 project with changes at API rates; on a subscription login it draws on plan limits, not a bill. It
 adds a card for each session that needs the human, a `nudge` card for each Stuck one, and a `remind`
 card when a session's `coord-parked-until` passes. Finished work always arrives as an `accept` card
-asking whether to close the session. A session that has sent messages to other sessions is a relay
-and never gets a card: fold its asks into the streams they concern yourself (step 7). Before
+asking whether to close the session. A relay gets no card of its own: fold its forwarded asks into
+the streams they concern yourself (step 7). Having messaged other sessions does not make a session a
+relay, and a session whose last message asks the human is Blocked and gets its card. Before
 any of that, it ticks off each open card whose session no longer waits: archived, running again,
 sent a message after the card was added, or read again by a sweep that found something newer. It
 then forgets that session's last read, so the sweep reads it afresh when it next stops. Its log,

@@ -133,5 +133,27 @@ expect "a sweep card is added" 1 "$(open_for "$D")"
 expect "its report is kept" "yes, CI is green" "$(inbox report all "$D" | jq -r .recommend)"
 expect "the report keeps the links" "https://github.com/a/b/pull/1" "$(inbox report all "$D" | jq -r '.links[0].url')"
 
+# --- tick.sh: Blocked beats Relay ----------------------------------------------------------------
+# From 2026-10-28: a worker the coordinator told to share a dev environment with its peers had sent
+# them messages, and its last message asked the human for a Google sign-in. The ask was dropped.
+
+E=eeeeeeee-0000-0000-0000-000000000005
+F=ffffffff-0000-0000-0000-000000000006
+R=$T/relay
+mkdir -p "$R"
+jq -n -c --arg id "$E" --arg peer "$F" \
+  '{id: $id, hash: "555555555555", labels: {}, sends_to: [$peer]}' > "$R/sessions.jsonl"
+jq -n -c --arg id "$F" --arg peer "$E" \
+  '{id: $id, hash: "666666666666", labels: {}, sends_to: [$peer]}' >> "$R/sessions.jsonl"
+jq -n --arg id "$E" --arg peer "$F" '[
+  {id: $id, stream: "OpenPanel env", class: "Blocked", kind: "do",
+   ask: "Do one web Google sign-in on dev-coffee", relay_covers: [], relay_asks: []},
+  {id: $peer, stream: "Mobile review", class: "Relay", kind: null, ask: null,
+   relay_covers: [$id], relay_asks: []}]' > "$R/out-proj.json"
+cards_from_sweep all "$R/sessions.jsonl" "$R" > /dev/null
+expect "a worker that messaged peers and asks the human gets a card" 1 "$(open_for "$E")"
+expect "its card carries the ask" "Do one web Google sign-in on dev-coffee" "$(open_ask_for "$E")"
+expect "a Relay verdict still gets no card" 0 "$(open_for "$F")"
+
 printf '%s passed, %s failed\n' "$pass" "$fail"
 (( fail == 0 ))
